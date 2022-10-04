@@ -24,6 +24,10 @@
 #include <string.h>
 #include <math.h>
 
+#ifdef _WIN32
+#include "../scciManager.h"
+#endif
+
 #define CHIP_FREQBASE fmFreqBase
 #define CHIP_DIVIDER fmDivBase
 
@@ -321,24 +325,27 @@ void DivPlatformYM2608::acquire(short* bufL, short* bufR, size_t start, size_t l
         QueuedWrite& w=writes.front();
         fm->write(0x0+((w.addr>>8)<<1),w.addr);
         fm->write(0x1+((w.addr>>8)<<1),w.val);
+        SCCIManager::instance().write(this, w.addr, w.val);
         regPool[w.addr&0x1ff]=w.val;
         writes.pop_front();
         delay=4;
       }
     }
-    
-    fm->generate(&fmout);
 
-    os[0]=fmout.data[0]+(fmout.data[2]>>1);
-    if (os[0]<-32768) os[0]=-32768;
-    if (os[0]>32767) os[0]=32767;
+    if (!SCCIManager::instance().hasAttached(this)) {
+      fm->generate(&fmout);
 
-    os[1]=fmout.data[1]+(fmout.data[2]>>1);
-    if (os[1]<-32768) os[1]=-32768;
-    if (os[1]>32767) os[1]=32767;
-  
-    bufL[h]=os[0];
-    bufR[h]=os[1];
+      os[0]=fmout.data[0]+(fmout.data[2]>>1);
+      if (os[0]<-32768) os[0]=-32768;
+      if (os[0]>32767) os[0]=32767;
+
+      os[1]=fmout.data[1]+(fmout.data[2]>>1);
+      if (os[1]<-32768) os[1]=-32768;
+      if (os[1]>32767) os[1]=32767;
+
+      bufL[h]=os[0];
+      bufR[h]=os[1];
+    }
 
     for (int i=0; i<6; i++) {
       oscBuf[i]->data[oscBuf[i]->needle++]=(fmChan[i]->debug_output(0)+fmChan[i]->debug_output(1));
@@ -354,6 +361,11 @@ void DivPlatformYM2608::acquire(short* bufL, short* bufR, size_t start, size_t l
     }
 
     oscBuf[15]->data[oscBuf[15]->needle++]=abe->get_last_out(0)+abe->get_last_out(1);
+  }
+
+  if (SCCIManager::instance().hasAttached(this)) {
+    std::fill_n(bufL + start, len, 0);
+    std::fill_n(bufR + start, len, 0);
   }
 }
 

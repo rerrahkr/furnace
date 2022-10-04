@@ -38,6 +38,7 @@
 #include "sfWrapper.h"
 #endif
 #include <fmt/printf.h>
+#include "scciManager.h"
 
 void process(void* u, float** in, float** out, int inChans, int outChans, unsigned int size) {
   ((DivEngine*)u)->nextBuf(in,out,inChans,outChans,size);
@@ -1945,6 +1946,7 @@ void DivEngine::stop() {
       }
     }
   }
+  SCCIManager::instance().reset();
   BUSY_END;
 }
 
@@ -3630,6 +3632,7 @@ void DivEngine::initDispatch() {
     disCont[i].init(song.system[i],this,getChannelCount(song.system[i]),got.rate,song.systemFlags[i]);
     disCont[i].setRates(got.rate);
     disCont[i].setQuality(lowQuality);
+    SCCIManager::instance().attach(song.system[i], disCont[i].dispatch);
   }
   recalcChans();
   BUSY_END;
@@ -3638,6 +3641,7 @@ void DivEngine::initDispatch() {
 void DivEngine::quitDispatch() {
   BUSY_BEGIN;
   for (int i=0; i<song.systemLen; i++) {
+    SCCIManager::instance().detach(disCont[i].dispatch);
     disCont[i].quit();
   }
   cycles=0;

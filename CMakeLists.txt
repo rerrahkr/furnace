@@ -527,6 +527,10 @@ if (WIN32)
   list(APPEND ENGINE_SOURCES res/furnace.rc)
 endif()
 
+if (WIN32)
+  list(APPEND ENGINE_SOURCES src/engine/scciManager.cpp)
+endif(WIN32)
+
 set(CLI_SOURCES
 src/cli/cli.cpp
 )
@@ -739,6 +743,7 @@ endif()
 target_include_directories(furnace SYSTEM PRIVATE ${DEPENDENCIES_INCLUDE_DIRS})
 target_compile_definitions(furnace PRIVATE ${DEPENDENCIES_DEFINES} IMGUI_USER_CONFIG="imconfig_fur.h")
 target_compile_options(furnace PRIVATE ${DEPENDENCIES_COMPILE_OPTIONS})
+target_compile_features(furnace PRIVATE cxx_std_17)
 target_link_libraries(furnace PRIVATE ${DEPENDENCIES_LIBRARIES})
 if (PKG_CONFIG_FOUND AND (SYSTEM_FMT OR SYSTEM_LIBSNDFILE OR SYSTEM_ZLIB OR SYSTEM_SDL2 OR SYSTEM_RTMIDI OR WITH_JACK))
   if ("${CMAKE_VERSION}" VERSION_LESS "3.13")

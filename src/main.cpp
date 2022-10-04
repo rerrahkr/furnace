@@ -36,6 +36,8 @@
 #include <unistd.h>
 #endif
 
+#include "engine/scciManager.h"
+
 #include "cli/cli.h"
 
 #ifdef HAVE_GUI
@@ -384,6 +386,12 @@ int main(int argc, char** argv) {
   }
 
   e.setConsoleMode(consoleMode);
+
+  if (SCCIManager::instance().loadLibrary()) {
+    if (SCCIManager::instance().initializeChips()) {
+      SCCIManager::instance().reset();
+    }
+  }
 
 #ifdef _WIN32
   if (consoleMode) {
