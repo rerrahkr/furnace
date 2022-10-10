@@ -304,6 +304,16 @@ class DivDispatch {
     int chipClock;
 
     /**
+     * Send sound data to real chip devices.
+     * @param bufL the left or mono channel buffer.
+     * @param bufR the right channel buffer.
+     * @param start the start offset.
+     * @param len the amount of samples to fill.
+     * @return whether sound data has been sent.
+    */
+    virtual bool sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len);
+
+    /**
      * fill a buffer with sound data.
      * @param bufL the left or mono channel buffer.
      * @param bufR the right channel buffer.

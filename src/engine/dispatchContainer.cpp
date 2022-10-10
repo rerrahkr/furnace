@@ -81,7 +81,9 @@ void DivDispatchContainer::setQuality(bool lowQual) {
 }
 
 void DivDispatchContainer::acquire(size_t offset, size_t count) {
-  dispatch->acquire(bbIn[0],bbIn[1],offset,count);
+  if (!dispatch->sendDataToRealChip(bbIn[0],bbIn[1],offset,count)) {
+    dispatch->acquire(bbIn[0],bbIn[1],offset,count);
+  }
 }
 
 void DivDispatchContainer::flush(size_t count) {

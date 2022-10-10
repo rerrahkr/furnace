@@ -20,13 +20,10 @@
 #include "ym2608.h"
 #include "sound/ymfm/ymfm.h"
 #include "../engine.h"
+#include "../scciManager.h"
 #include "../../ta-log.h"
 #include <string.h>
 #include <math.h>
-
-#ifdef _WIN32
-#include "../scciManager.h"
-#endif
 
 #define CHIP_FREQBASE fmFreqBase
 #define CHIP_DIVIDER fmDivBase
@@ -301,6 +298,35 @@ double DivPlatformYM2608::NOTE_ADPCMB(int note) {
   return 0;
 }
 
+bool DivPlatformYM2608::sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len) {
+  bool hasAttached=SCCIManager::instance().hasAttached(this);
+  if (hasAttached) {
+    while (!writes.empty()) {
+      QueuedWrite& w=writes.front();
+      SCCIManager::instance().write(this,w.addr,w.val);
+      regPool[w.addr&0x1ff]=w.val;
+      writes.pop_front();
+    }
+
+    memset(bufL+start,0,len*sizeof(short));
+    memset(bufR+start,0,len*sizeof(short));
+
+    for (size_t i=0; i<16; i++) {
+      DivDispatchOscBuffer* buf=oscBuf[i];
+      size_t fullNeedle=buf->needle+len;
+      size_t zeroLen;
+      while (fullNeedle) {
+        size_t clamped=65536<fullNeedle?65536:fullNeedle;
+        size_t zeroLen=clamped-buf->needle;
+        memset(buf->data+buf->needle,0,zeroLen*sizeof(short));
+        buf->needle=clamped%65536;
+        fullNeedle-=clamped;
+      }
+    }
+  }
+  return hasAttached;
+}
+
 void DivPlatformYM2608::acquire(short* bufL, short* bufR, size_t start, size_t len) {
   static int os[2];
 
@@ -325,27 +351,24 @@ void DivPlatformYM2608::acquire(short* bufL, short* bufR, size_t start, size_t l
         QueuedWrite& w=writes.front();
         fm->write(0x0+((w.addr>>8)<<1),w.addr);
         fm->write(0x1+((w.addr>>8)<<1),w.val);
-        SCCIManager::instance().write(this, w.addr, w.val);
         regPool[w.addr&0x1ff]=w.val;
         writes.pop_front();
         delay=4;
       }
     }
 
-    if (!SCCIManager::instance().hasAttached(this)) {
-      fm->generate(&fmout);
+    fm->generate(&fmout);
 
-      os[0]=fmout.data[0]+(fmout.data[2]>>1);
-      if (os[0]<-32768) os[0]=-32768;
-      if (os[0]>32767) os[0]=32767;
+    os[0]=fmout.data[0]+(fmout.data[2]>>1);
+    if (os[0]<-32768) os[0]=-32768;
+    if (os[0]>32767) os[0]=32767;
 
-      os[1]=fmout.data[1]+(fmout.data[2]>>1);
-      if (os[1]<-32768) os[1]=-32768;
-      if (os[1]>32767) os[1]=32767;
+    os[1]=fmout.data[1]+(fmout.data[2]>>1);
+    if (os[1]<-32768) os[1]=-32768;
+    if (os[1]>32767) os[1]=32767;
 
-      bufL[h]=os[0];
-      bufR[h]=os[1];
-    }
+    bufL[h]=os[0];
+    bufR[h]=os[1];
 
     for (int i=0; i<6; i++) {
       oscBuf[i]->data[oscBuf[i]->needle++]=(fmChan[i]->debug_output(0)+fmChan[i]->debug_output(1));
@@ -361,11 +384,6 @@ void DivPlatformYM2608::acquire(short* bufL, short* bufR, size_t start, size_t l
     }
 
     oscBuf[15]->data[oscBuf[15]->needle++]=abe->get_last_out(0)+abe->get_last_out(1);
-  }
-
-  if (SCCIManager::instance().hasAttached(this)) {
-    std::fill_n(bufL + start, len, 0);
-    std::fill_n(bufR + start, len, 0);
   }
 }
 

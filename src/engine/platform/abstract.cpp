@@ -19,6 +19,10 @@
 
 #include "../dispatch.h"
 
+bool DivDispatch::sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len) {
+  return false;
+}
+
 void DivDispatch::acquire(short* bufL, short* bufR, size_t start, size_t len) {
 }
 

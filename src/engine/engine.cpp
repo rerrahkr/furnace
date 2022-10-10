@@ -3632,7 +3632,7 @@ void DivEngine::initDispatch() {
     disCont[i].init(song.system[i],this,getChannelCount(song.system[i]),got.rate,song.systemFlags[i]);
     disCont[i].setRates(got.rate);
     disCont[i].setQuality(lowQuality);
-    SCCIManager::instance().attach(song.system[i], disCont[i].dispatch);
+    SCCIManager::instance().attach(song.system[i],disCont[i].dispatch);
   }
   recalcChans();
   BUSY_END;

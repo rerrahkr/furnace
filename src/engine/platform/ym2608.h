@@ -115,6 +115,7 @@ class DivPlatformYM2608: public DivPlatformOPN {
     friend void putDispatchChan(void*,int,int);
   
   public:
+    bool sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len);
     void acquire(short* bufL, short* bufR, size_t start, size_t len);
     int dispatch(DivCommand c);
     void* getChanState(int chan);
