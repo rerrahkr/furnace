@@ -69,6 +69,7 @@ option(SYSTEM_SDL2 "Use a system-installed version of SDL2 instead of the vendor
 option(WARNINGS_ARE_ERRORS "Whether warnings in furnace's C++ code should be treated as errors" OFF)
 option(WITH_DEMOS "Install demo songs" ON)
 option(WITH_INSTRUMENTS "Install instruments" ON)
+option(USE_SCCI "Use SCCI the interface to real chips. Only available on Windows." OFF)
 
 set(DEPENDENCIES_INCLUDE_DIRS "")
 
@@ -527,9 +528,13 @@ if (WIN32)
   list(APPEND ENGINE_SOURCES res/furnace.rc)
 endif()
 
-if (WIN32)
-  list(APPEND ENGINE_SOURCES src/engine/scciManager.cpp)
-endif(WIN32)
+list(APPEND ENGINE_SOURCES src/engine/scciManager.cpp)
+if (WIN32 AND USE_SCCI)
+  list(APPEND DEPENDENCIES_DEFINES HAVE_SCCI)
+  message(STATUS "Building with SCCI")
+else()
+  message(STATUS "Building without SCCI")
+endif()
 
 set(CLI_SOURCES
 src/cli/cli.cpp

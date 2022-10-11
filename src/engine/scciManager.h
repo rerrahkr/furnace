@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <deque>
 
-#ifdef _WIN32
+#ifdef HAVE_SCCI
 #include <Windows.h>
 #include "../../extern/SCCI/scci.h"
 #include "../../extern/SCCI/SCCIDefines.h"
@@ -21,7 +21,7 @@ class SCCIManager {
   SCCIManager() noexcept:
     hasLoadedLib_(false) {}
 
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   HMODULE hScci_=nullptr;
   SoundInterfaceManager* siMan_=nullptr;
   std::unordered_map<SC_CHIP_TYPE, std::deque<SoundChip*>> unusedSC_;

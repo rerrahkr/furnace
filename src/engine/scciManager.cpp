@@ -14,16 +14,17 @@ SCCIManager& SCCIManager::instance() {
 }
 
 bool SCCIManager::loadLibrary() {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   if (hScci_ && !::FreeLibrary(hScci_)) {
     return false;
   }
-#endif
 
   hScci_=nullptr;
+#endif
+
   hasLoadedLib_=false;
 
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   hScci_=::LoadLibrary("scci.dll");
   hasLoadedLib_=hScci_!=nullptr;
 #endif
@@ -32,7 +33,7 @@ bool SCCIManager::loadLibrary() {
 }
 
 bool SCCIManager::releaseLibrary() {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   if (hasLoadedLib_) {
     hasLoadedLib_=::FreeLibrary(hScci_);
   }
@@ -46,7 +47,7 @@ bool SCCIManager::releaseLibrary() {
 }
 
 bool SCCIManager::initializeChips() {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   if (!hasLoadedLib_) {
     return false;
   }
@@ -90,7 +91,7 @@ bool SCCIManager::initializeChips() {
 }
 
 bool SCCIManager::deinitializeChips() {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   unusedSC_.clear();
   connections_.clear();
 
@@ -113,11 +114,15 @@ bool SCCIManager::deinitializeChips() {
 }
 
 bool SCCIManager::reset() {
+#ifdef HAVE_SCCI
   return siMan_?siMan_->reset():true;
+#else
+  return false;
+#endif
 }
 
 bool SCCIManager::attach(DivSystem sys, DivDispatch* dispatch) {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   switch (sys) {
     case DIV_SYSTEM_PC98:
     case DIV_SYSTEM_PC98_EXT:
@@ -138,7 +143,7 @@ bool SCCIManager::attach(DivSystem sys, DivDispatch* dispatch) {
 }
 
 bool SCCIManager::hasAttached(DivDispatch* dispatch) const {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   return connections_.count(dispatch);
 #else
   return false;
@@ -146,7 +151,7 @@ bool SCCIManager::hasAttached(DivDispatch* dispatch) const {
 }
 
 bool SCCIManager::detach(DivDispatch* dispatch) {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   if (connections_.count(dispatch)) {
     SoundChip* sc=connections_[dispatch];
     connections_.erase(dispatch);
@@ -159,7 +164,7 @@ bool SCCIManager::detach(DivDispatch* dispatch) {
 }
 
 bool SCCIManager::write(DivDispatch* dispatch, addr_t addr, data_t data) {
-#ifdef _WIN32
+#ifdef HAVE_SCCI
   if (connections_.count(dispatch)) {
     return connections_[dispatch]->setRegister(addr,data);
   }
