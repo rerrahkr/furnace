@@ -149,6 +149,7 @@ const char* aboutLine[]={
   "Konami VRC6 emulator by cam900",
   "Konami SCC emulator by cam900",
   "MSM6295 emulator by cam900",
+  "SCCI by gasshi"
   "",
   "greetings to:",
   "Fractal Sound team",

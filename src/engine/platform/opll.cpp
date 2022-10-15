@@ -19,6 +19,7 @@
 
 #include "opll.h"
 #include "../engine.h"
+#include "../scciManager.h"
 #include <string.h>
 #include <math.h>
 
@@ -38,6 +39,36 @@ const unsigned char drumSlot[11]={
 const unsigned char visMapOPLL[9]={
   6, 7, 8, 3, 4, 5, 0, 1, 2
 };
+
+bool DivPlatformOPLL::sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len) {
+  bool hasAttached=SCCIManager::instance().hasAttached(this);
+  if (hasAttached) {
+    while (!writes.empty()) {
+      QueuedWrite& w=writes.front();
+      SCCIManager::instance().write(this,w.addr,w.val);
+      regPool[w.addr&0xff]=w.val;
+      writes.pop();
+    }
+
+    memset(bufL+start,0,len*sizeof(short));
+    memset(bufR+start,0,len*sizeof(short));
+
+    const size_t oscSize=sizeof(oscBuf)/sizeof(oscBuf[0]);
+    for (size_t i=0; i<oscSize; i++) {
+      DivDispatchOscBuffer* buf=oscBuf[i];
+      size_t fullNeedle=buf->needle+len;
+      size_t zeroLen;
+      while (fullNeedle) {
+        size_t clamped=65536<fullNeedle?65536:fullNeedle;
+        size_t zeroLen=clamped-buf->needle;
+        memset(buf->data+buf->needle,0,zeroLen*sizeof(short));
+        buf->needle=clamped%65536;
+        fullNeedle-=clamped;
+      }
+    }
+  }
+  return hasAttached;
+}
 
 void DivPlatformOPLL::acquire_nuked(short* bufL, short* bufR, size_t start, size_t len) {
   static int o[2];

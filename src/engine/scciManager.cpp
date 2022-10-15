@@ -5,6 +5,28 @@
 
 std::unique_ptr<SCCIManager> SCCIManager::instance_;
 
+const std::unordered_map<DivSystem, SC_CHIP_TYPE> SCCIManager::TYPE_MAP_ = {
+  { DIV_SYSTEM_YM2151, SC_TYPE_YM2151 },
+  { DIV_SYSTEM_OPZ, SC_TYPE_YM2414 },
+  { DIV_SYSTEM_OPN, SC_TYPE_YM2203 },
+  { DIV_SYSTEM_OPN_EXT, SC_TYPE_YM2203 },
+  { DIV_SYSTEM_PC98, SC_TYPE_YM2608 },
+  { DIV_SYSTEM_PC98_EXT, SC_TYPE_YM2608 },
+  { DIV_SYSTEM_YM2610B, SC_TYPE_YM2610B },
+  { DIV_SYSTEM_YM2610B_EXT, SC_TYPE_YM2610B },
+  { DIV_SYSTEM_YM2612, SC_TYPE_YM2612 },
+  { DIV_SYSTEM_YM2612_EXT, SC_TYPE_YM2612 },
+  { DIV_SYSTEM_YM2612_FRAC, SC_TYPE_YM2612 },
+  { DIV_SYSTEM_YM2612_FRAC_EXT, SC_TYPE_YM2612 },
+  { DIV_SYSTEM_OPL, SC_TYPE_YM3526 },
+  { DIV_SYSTEM_Y8950, SC_TYPE_Y8950 },
+  { DIV_SYSTEM_OPL2, SC_TYPE_YM3812 },
+  { DIV_SYSTEM_OPLL, SC_TYPE_YM2413 },
+  { DIV_SYSTEM_OPL3, SC_TYPE_YMF262 },
+  { DIV_SYSTEM_AY8910, SC_TYPE_AY8910 },
+  { DIV_SYSTEM_AY8930, SC_TYPE_AY8930 },
+};
+
 SCCIManager& SCCIManager::instance() {
   if (!instance_) {
     instance_.reset(new SCCIManager);
@@ -72,13 +94,7 @@ bool SCCIManager::initializeChips() {
     SoundInterface* sif=siMan_->getInterface(i);
     int siCnt=sif->getSoundChipCount();
     for (int j=0; j<siCnt; j++) {
-      SoundChip* sc=sif->getSoundChip(j);
-      SC_CHIP_TYPE c=static_cast<SC_CHIP_TYPE>(sc->getSoundChipType());
-      if (unusedSC_.count(c)) {
-        unusedSC_[c].push_back(sc);
-      } else {
-        unusedSC_[c]={sc};
-      }
+      unusedSC_.push_back(sif->getSoundChip(j));
     }
   }
 
@@ -92,6 +108,8 @@ bool SCCIManager::initializeChips() {
 
 bool SCCIManager::deinitializeChips() {
 #ifdef HAVE_SCCI
+  reset();
+
   unusedSC_.clear();
   connections_.clear();
 
@@ -123,19 +141,34 @@ bool SCCIManager::reset() {
 
 bool SCCIManager::attach(DivSystem sys, DivDispatch* dispatch) {
 #ifdef HAVE_SCCI
-  switch (sys) {
-    case DIV_SYSTEM_PC98:
-    case DIV_SYSTEM_PC98_EXT:
-      if (unusedSC_.count(SC_TYPE_YM2608) && !unusedSC_[SC_TYPE_YM2608].empty() && !connections_.count(dispatch)) {
-        SoundChip* sc=unusedSC_[SC_TYPE_YM2608].front();
-        unusedSC_[SC_TYPE_YM2608].pop_front();
+  if (!TYPE_MAP_.count(sys)) {
+    return false;
+  }
+
+  SC_CHIP_TYPE type=SCCIManager::TYPE_MAP_.at(sys);
+
+  // Find chip
+  auto itr=std::find_if(unusedSC_.begin(), unusedSC_.end(), [type](SoundChip* sc) {
+    return static_cast<SC_CHIP_TYPE>(sc->getSoundChipType()) == type; });
+  if (itr != unusedSC_.end()) {
+    (*itr)->init();
+    connections_[dispatch]=*itr;
+    unusedSC_.erase(itr);
+    return true;
+  }
+
+  // Find compatible chip
+  for (size_t i=0; i<unusedSC_.size(); i++) {
+    SoundChip* sc=unusedSC_[i];
+    SCCI_SOUND_CHIP_INFO* info=sc->getSoundChipInfo();
+    for (size_t j=0; j<2; j++) {
+      if (static_cast<SC_CHIP_TYPE>(info->iCompatibleSoundChip[j]) == type) {
+        sc->init();
         connections_[dispatch]=sc;
+        unusedSC_.erase(unusedSC_.begin() + i);
         return true;
       }
-    break;
-
-    default:
-      break;
+    }
   }
 #endif
 
@@ -154,8 +187,9 @@ bool SCCIManager::detach(DivDispatch* dispatch) {
 #ifdef HAVE_SCCI
   if (connections_.count(dispatch)) {
     SoundChip* sc=connections_[dispatch];
+    sc->init();
     connections_.erase(dispatch);
-    unusedSC_[SC_TYPE_YM2608].push_back(sc);
+    unusedSC_.push_back(sc);
     return true;
   }
 #endif

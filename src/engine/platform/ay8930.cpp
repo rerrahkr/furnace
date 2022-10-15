@@ -19,6 +19,7 @@
 
 #include "ay8930.h"
 #include "../engine.h"
+#include "../scciManager.h"
 #include "../../ta-log.h"
 #include "sound/ay8910.h"
 #include <string.h>
@@ -108,6 +109,39 @@ const unsigned char dacLogTableAY8930[256]={
   30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
   30, 30, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31, 31
 };
+
+bool DivPlatformAY8930::sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len) {
+  bool hasAttached=SCCIManager::instance().hasAttached(this);
+  if (hasAttached) {
+    while (!writes.empty()) {
+      QueuedWrite& w=writes.front();
+      SCCIManager::instance().write(this,w.addr,w.val);
+      if (w.addr!=0x0d && (regPool[0x0d]&0xf0)==0xb0) {
+        regPool[(w.addr&0x0f)|0x10]=w.val;
+      } else {
+        regPool[w.addr&0x0f]=w.val;
+      }
+      writes.pop();
+    }
+
+    memset(bufL+start,0,len*sizeof(short));
+    memset(bufR+start,0,len*sizeof(short));
+
+    for (size_t i=0; i<3; i++) {
+      DivDispatchOscBuffer* buf=oscBuf[i];
+      size_t fullNeedle=buf->needle+len;
+      size_t zeroLen;
+      while (fullNeedle) {
+        size_t clamped=65536<fullNeedle?65536:fullNeedle;
+        size_t zeroLen=clamped-buf->needle;
+        memset(buf->data+buf->needle,0,zeroLen*sizeof(short));
+        buf->needle=clamped%65536;
+        fullNeedle-=clamped;
+      }
+    }
+  }
+  return hasAttached;
+}
 
 void DivPlatformAY8930::runDAC() {
   for (int i=0; i<3; i++) {

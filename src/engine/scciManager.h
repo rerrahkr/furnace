@@ -4,6 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <deque>
+#include <vector>
 
 #ifdef HAVE_SCCI
 #include <Windows.h>
@@ -24,8 +25,9 @@ class SCCIManager {
 #ifdef HAVE_SCCI
   HMODULE hScci_=nullptr;
   SoundInterfaceManager* siMan_=nullptr;
-  std::unordered_map<SC_CHIP_TYPE, std::deque<SoundChip*>> unusedSC_;
+  std::vector<SoundChip*> unusedSC_;
   std::unordered_map<DivDispatch*, SoundChip*> connections_;
+  static const std::unordered_map<DivSystem, SC_CHIP_TYPE> TYPE_MAP_;
 #endif
 
 public:

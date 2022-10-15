@@ -18,6 +18,7 @@
  */
 
 #include "ym2610b.h"
+#include "../scciManager.h"
 #include <math.h>
 
 const char* regCheatSheetYM2610B[]={
@@ -294,6 +295,35 @@ const char* regCheatSheetYM2610B[]={
 
 const char** DivPlatformYM2610B::getRegisterSheet() {
   return regCheatSheetYM2610B;
+}
+
+bool DivPlatformYM2610B::sendDataToRealChip(short* bufL, short* bufR, size_t start, size_t len) {
+  bool hasAttached=SCCIManager::instance().hasAttached(this);
+  if (hasAttached) {
+    while (!writes.empty()) {
+      QueuedWrite& w=writes.front();
+      SCCIManager::instance().write(this,w.addr,w.val);
+      regPool[w.addr&0x1ff]=w.val;
+      writes.pop_front();
+    }
+
+    memset(bufL+start,0,len*sizeof(short));
+    memset(bufR+start,0,len*sizeof(short));
+
+    for (size_t i=0; i<adpcmBChanOffs; i++) {
+      DivDispatchOscBuffer* buf=oscBuf[i];
+      size_t fullNeedle=buf->needle+len;
+      size_t zeroLen;
+      while (fullNeedle) {
+        size_t clamped=65536<fullNeedle?65536:fullNeedle;
+        size_t zeroLen=clamped-buf->needle;
+        memset(buf->data+buf->needle,0,zeroLen*sizeof(short));
+        buf->needle=clamped%65536;
+        fullNeedle-=clamped;
+      }
+    }
+  }
+  return hasAttached;
 }
 
 void DivPlatformYM2610B::acquire(short* bufL, short* bufR, size_t start, size_t len) {
