@@ -144,7 +144,7 @@ class DivPlatformOPL: public DivDispatch {
     bool keyOffAffectsArp(int ch);
     bool keyOffAffectsPorta(int ch);
     void toggleRegisterDump(bool enable);
-    void setFlags(unsigned int flags);
+    void setFlags(const DivConfig& flags);
     void notifyInsChange(int ins);
     void notifyInsDeletion(void* ins);
     int getPortaFloor(int ch);
@@ -154,7 +154,7 @@ class DivPlatformOPL: public DivDispatch {
     size_t getSampleMemCapacity(int index);
     size_t getSampleMemUsage(int index);
     void renderSamples();
-    int init(DivEngine* parent, int channels, int sugRate, unsigned int flags);
+    int init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags);
     void quit();
     ~DivPlatformOPL();
 };

@@ -1677,7 +1677,7 @@ void DivPlatformOPL::setOPLType(int type, bool drums) {
   properDrumsSys=drums;
 }
 
-void DivPlatformOPL::setFlags(unsigned int flags) {
+void DivPlatformOPL::setFlags(const DivConfig& flags) {
   /*
   if (flags==3) {
     chipClock=COLOR_NTSC*12.0/7.0;
@@ -1705,7 +1705,7 @@ void DivPlatformOPL::setFlags(unsigned int flags) {
   switch (chipType) {
     default:
     case 1: case 2: case 8950:
-      switch (flags&0xff) {
+      switch (flags.getInt("clockSel",0)) {
         case 0x01:
           chipClock=COLOR_PAL*4.0/5.0;
           break;
@@ -1729,7 +1729,7 @@ void DivPlatformOPL::setFlags(unsigned int flags) {
       chipRateBase=rate;
       break;
     case 3:
-      switch (flags&0xff) {
+      switch (flags.getInt("clockSel",0)) {
         case 0x01:
           chipClock=COLOR_PAL*16.0/5.0;
           break;
@@ -1750,7 +1750,7 @@ void DivPlatformOPL::setFlags(unsigned int flags) {
       chipRateBase=rate;
       break;
     case 4:
-      switch (flags&0xff) {
+      switch (flags.getInt("clockSel",0)) {
         case 0x01:
           chipClock=COLOR_PAL*32.0/5.0;
           break;
@@ -1816,7 +1816,7 @@ void DivPlatformOPL::renderSamples() {
   adpcmBMemLen=memPos+256;
 }
 
-int DivPlatformOPL::init(DivEngine* p, int channels, int sugRate, unsigned int flags) {
+int DivPlatformOPL::init(DivEngine* p, int channels, int sugRate, const DivConfig& flags) {
   parent=p;
   dumpWrites=false;
   skipRegisterWrites=false;

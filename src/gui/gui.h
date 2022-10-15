@@ -170,6 +170,8 @@ enum FurnaceGUIColors {
   GUI_COLOR_INSTR_QSOUND,
   GUI_COLOR_INSTR_YMZ280B,
   GUI_COLOR_INSTR_RF5C68,
+  GUI_COLOR_INSTR_MSM5232,
+  GUI_COLOR_INSTR_T6W28,
   GUI_COLOR_INSTR_UNKNOWN,
 
   GUI_COLOR_CHANNEL_BG,
@@ -216,6 +218,15 @@ enum FurnaceGUIColors {
   GUI_COLOR_PATTERN_EFFECT_SYS_PRIMARY,
   GUI_COLOR_PATTERN_EFFECT_SYS_SECONDARY,
   GUI_COLOR_PATTERN_EFFECT_MISC,
+
+  GUI_COLOR_SAMPLE_BG,
+  GUI_COLOR_SAMPLE_FG,
+  GUI_COLOR_SAMPLE_LOOP,
+  GUI_COLOR_SAMPLE_CENTER,
+  GUI_COLOR_SAMPLE_GRID,
+  GUI_COLOR_SAMPLE_SEL,
+  GUI_COLOR_SAMPLE_SEL_POINT,
+  GUI_COLOR_SAMPLE_NEEDLE,
 
   GUI_COLOR_PAT_MANAGER_NULL,
   GUI_COLOR_PAT_MANAGER_USED,
@@ -345,6 +356,7 @@ enum FurnaceGUIWarnings {
   GUI_WARN_CLEAR,
   GUI_WARN_SUBSONG_DEL,
   GUI_WARN_SYSTEM_DEL,
+  GUI_WARN_CLEAR_HISTORY,
   GUI_WARN_GENERIC
 };
 
@@ -1198,6 +1210,7 @@ class FurnaceGUI {
     int midiOutClock;
     int midiOutMode;
     int maxRecentFile;
+    int centerPattern;
     unsigned int maxUndoSteps;
     String mainFontPath;
     String patFontPath;
@@ -1211,7 +1224,7 @@ class FurnaceGUI {
     String macroRelLabel;
     String emptyLabel;
     String emptyLabel2;
-    std::vector<int> initialSys;
+    DivConfig initialSys;
 
     Settings():
       mainFontSize(18),
@@ -1323,6 +1336,7 @@ class FurnaceGUI {
       midiOutClock(0),
       midiOutMode(1),
       maxRecentFile(10),
+      centerPattern(0),
       maxUndoSteps(100),
       mainFontPath(""),
       patFontPath(""),
@@ -1357,10 +1371,12 @@ class FurnaceGUI {
   SelectionPoint selStart, selEnd, cursor, cursorDrag, dragStart, dragEnd;
   bool selecting, selectingFull, dragging, curNibble, orderNibble, followOrders, followPattern, changeAllOrders, mobileUI;
   bool collapseWindow, demandScrollX, fancyPattern, wantPatName, firstFrame, tempoView, waveHex, waveSigned, waveGenVisible, lockLayout, editOptsVisible, latchNibble, nonLatchNibble;
+  bool keepLoopAlive;
   FurnaceGUIWindows curWindow, nextWindow, curWindowLast;
   float peak[2];
   float patChanX[DIV_MAX_CHANS+1];
   float patChanSlideY[DIV_MAX_CHANS+1];
+  float lastPatternWidth;
   const int* nextDesc;
   String nextDescName;
 
@@ -1599,6 +1615,7 @@ class FurnaceGUI {
 
   // wave generator
   int waveGenBaseShape;
+  int waveInterpolation;
   float waveGenDuty;
   int waveGenPower;
   float waveGenInvertPoint;
@@ -1617,9 +1634,9 @@ class FurnaceGUI {
   void drawSSGEnv(unsigned char type, const ImVec2& size);
   void drawWaveform(unsigned char type, bool opz, const ImVec2& size);
   void drawAlgorithm(unsigned char alg, FurnaceGUIFMAlgs algType, const ImVec2& size);
-  void drawFMEnv(unsigned char tl, unsigned char ar, unsigned char dr, unsigned char d2r, unsigned char rr, unsigned char sl, unsigned char sus, unsigned char egt, unsigned char algOrGlobalSus, float maxTl, float maxArDr, const ImVec2& size, unsigned short instType);
+  void drawFMEnv(unsigned char tl, unsigned char ar, unsigned char dr, unsigned char d2r, unsigned char rr, unsigned char sl, unsigned char sus, unsigned char egt, unsigned char algOrGlobalSus, float maxTl, float maxArDr, float maxRr, const ImVec2& size, unsigned short instType);
   void drawGBEnv(unsigned char vol, unsigned char len, unsigned char sLen, bool dir, const ImVec2& size);
-  void drawSysConf(int chan, DivSystem type, unsigned int& flags, bool modifyOnChange);
+  bool drawSysConf(int chan, DivSystem type, DivConfig& flags, bool modifyOnChange);
   void kvsConfig(DivInstrument* ins);
 
   // these ones offer ctrl-wheel fine value changes.
@@ -1628,6 +1645,9 @@ class FurnaceGUI {
   bool CWSliderInt(const char* label, int* v, int v_min, int v_max, const char* format="%d", ImGuiSliderFlags flags=0);
   bool CWSliderFloat(const char* label, float* v, float v_min, float v_max, const char* format="%.3f", ImGuiSliderFlags flags=0);
   bool CWVSliderInt(const char* label, const ImVec2& size, int* v, int v_min, int v_max, const char* format="%d", ImGuiSliderFlags flags=0);
+
+  // inverted checkbox
+  bool InvCheckbox(const char* label, bool* value);
 
   void updateWindowTitle();
   void autoDetectSystem();
@@ -1790,6 +1810,7 @@ class FurnaceGUI {
   public:
     void showWarning(String what, FurnaceGUIWarnings type);
     void showError(String what);
+    String getLastError();
     const char* noteNameNormal(short note, short octave);
     const char* noteName(short note, short octave);
     bool decodeNote(const char* what, short& note, short& octave);

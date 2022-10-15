@@ -275,29 +275,61 @@ double DivEngine::benchmarkSeek() {
   return tAvg;
 }
 
-#define WRITE_TICK \
-  if (!wroteTick) { \
-    wroteTick=true; \
-    if (binary) { \
-      if (tick-lastTick>255) { \
-        w->writeC(0xfc); \
-        w->writeS(tick-lastTick); \
-      } else if (tick-lastTick>1) { \
-        w->writeC(0xfd); \
-        w->writeC(tick-lastTick); \
-      } else { \
-        w->writeC(0xfe); \
+#define WRITE_TICK(x) \
+  if (binary) { \
+    if (!wroteTick[x]) { \
+      wroteTick[x]=true; \
+      if (tick-lastTick[x]>255) { \
+        chanStream[x]->writeC(0xfc); \
+        chanStream[x]->writeS(tick-lastTick[x]); \
+      } else if (tick-lastTick[x]>1) { \
+        delayPopularity[tick-lastTick[x]]++; \
+        chanStream[x]->writeC(0xfd); \
+        chanStream[x]->writeC(tick-lastTick[x]); \
+      } else if (tick-lastTick[x]>0) { \
+        chanStream[x]->writeC(0xfe); \
       } \
-    } else { \
+      lastTick[x]=tick; \
+    } \
+  } else { \
+    if (!wroteTickGlobal) { \
+      wroteTickGlobal=true; \
       w->writeText(fmt::sprintf(">> TICK %d\n",tick)); \
     } \
-    lastTick=tick; \
   }
 
 void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
-  w->writeC(c.cmd);
   switch (c.cmd) {
     case DIV_CMD_NOTE_ON:
+      if (c.value==DIV_NOTE_NULL) {
+        w->writeC(0xb4);
+      } else {
+        w->writeC(CLAMP(c.value+60,0,0xb3));
+      }
+      break;
+    case DIV_CMD_NOTE_OFF:
+    case DIV_CMD_NOTE_OFF_ENV:
+    case DIV_CMD_ENV_RELEASE:
+    case DIV_CMD_INSTRUMENT:
+    case DIV_CMD_PANNING:
+    case DIV_CMD_PRE_PORTA:
+    case DIV_CMD_HINT_VIBRATO:
+    case DIV_CMD_HINT_VIBRATO_RANGE:
+    case DIV_CMD_HINT_VIBRATO_SHAPE:
+    case DIV_CMD_HINT_PITCH:
+    case DIV_CMD_HINT_ARPEGGIO:
+    case DIV_CMD_HINT_VOLUME:
+    case DIV_CMD_HINT_PORTA:
+    case DIV_CMD_HINT_VOL_SLIDE:
+    case DIV_CMD_HINT_LEGATO:
+      w->writeC((unsigned char)c.cmd+0xb4);
+      break;
+    default:
+      w->writeC(0xf0); // unoptimized extended command
+      w->writeC(c.cmd);
+      break;
+  }
+  switch (c.cmd) {
     case DIV_CMD_HINT_LEGATO:
       if (c.value==DIV_NOTE_NULL) {
         w->writeC(0xff);
@@ -305,6 +337,7 @@ void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
         w->writeC(c.value+60);
       }
       break;
+    case DIV_CMD_NOTE_ON:
     case DIV_CMD_NOTE_OFF:
     case DIV_CMD_NOTE_OFF_ENV:
     case DIV_CMD_ENV_RELEASE:
@@ -314,6 +347,21 @@ void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
     case DIV_CMD_HINT_VIBRATO_SHAPE:
     case DIV_CMD_HINT_PITCH:
     case DIV_CMD_HINT_VOLUME:
+      w->writeC(c.value);
+      break;
+    case DIV_CMD_PANNING:
+    case DIV_CMD_HINT_VIBRATO:
+    case DIV_CMD_HINT_ARPEGGIO:
+    case DIV_CMD_HINT_PORTA:
+      w->writeC(c.value);
+      w->writeC(c.value2);
+      break;
+    case DIV_CMD_PRE_PORTA:
+      w->writeC((c.value?0x80:0)|(c.value2?0x40:0));
+      break;
+    case DIV_CMD_HINT_VOL_SLIDE:
+      w->writeS(c.value);
+      break;
     case DIV_CMD_SAMPLE_MODE:
     case DIV_CMD_SAMPLE_FREQ:
     case DIV_CMD_SAMPLE_BANK:
@@ -349,12 +397,18 @@ void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
     case DIV_CMD_AY_NOISE_MASK_AND:
     case DIV_CMD_AY_NOISE_MASK_OR:
     case DIV_CMD_AY_AUTO_ENVELOPE:
+    case DIV_CMD_FDS_MOD_DEPTH:
+    case DIV_CMD_FDS_MOD_HIGH:
+    case DIV_CMD_FDS_MOD_LOW:
+    case DIV_CMD_FDS_MOD_POS:
+    case DIV_CMD_FDS_MOD_WAVE:
+    case DIV_CMD_SAA_ENVELOPE:
+    case DIV_CMD_AMIGA_FILTER:
+    case DIV_CMD_AMIGA_AM:
+    case DIV_CMD_AMIGA_PM:
+      w->writeC(1); // length
       w->writeC(c.value);
       break;
-    case DIV_CMD_PANNING:
-    case DIV_CMD_HINT_VIBRATO:
-    case DIV_CMD_HINT_ARPEGGIO:
-    case DIV_CMD_HINT_PORTA:
     case DIV_CMD_FM_TL:
     case DIV_CMD_FM_AM:
     case DIV_CMD_FM_AR:
@@ -376,25 +430,27 @@ void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
     case DIV_CMD_FM_FINE:
     case DIV_CMD_AY_IO_WRITE:
     case DIV_CMD_AY_AUTO_PWM:
+      w->writeC(2); // length
       w->writeC(c.value);
       w->writeC(c.value2);
       break;
-    case DIV_CMD_PRE_PORTA:
-      w->writeC((c.value?0x80:0)|(c.value2?0x40:0));
-      break;
-    case DIV_CMD_HINT_VOL_SLIDE:
     case DIV_CMD_C64_FINE_DUTY:
     case DIV_CMD_C64_FINE_CUTOFF:
+    case DIV_CMD_LYNX_LFSR_LOAD:
+      w->writeC(2); // length
       w->writeS(c.value);
       break;
     case DIV_CMD_FM_FIXFREQ:
+      w->writeC(2); // length
       w->writeS((c.value<<12)|(c.value2&0x7ff));
       break;
     case DIV_CMD_NES_SWEEP:
+      w->writeC(1); // length
       w->writeC((c.value?8:0)|(c.value2&0x77));
       break;
     default:
       logW("unimplemented command %s!",cmdName[c.cmd]);
+      w->writeC(0); // length
       break;
   }
 }
@@ -402,6 +458,7 @@ void writePackedCommandValues(SafeWriter* w, const DivCommand& c) {
 SafeWriter* DivEngine::saveCommand(bool binary) {
   stop();
   repeatPattern=false;
+  shallStop=false;
   setOrder(0);
   BUSY_BEGIN_SOFT;
   // determine loop point
@@ -411,12 +468,44 @@ SafeWriter* DivEngine::saveCommand(bool binary) {
   walkSong(loopOrder,loopRow,loopEnd);
   logI("loop point: %d %d",loopOrder,loopRow);
 
+  int cmdPopularity[256];
+  int delayPopularity[256];
+
+  int sortedCmdPopularity[16];
+  int sortedDelayPopularity[16];
+  unsigned char sortedCmd[16];
+  unsigned char sortedDelay[16];
+  
+  SafeWriter* chanStream[DIV_MAX_CHANS];
+  unsigned int chanStreamOff[DIV_MAX_CHANS];
+  bool wroteTick[DIV_MAX_CHANS];
+
+  memset(cmdPopularity,0,256*sizeof(int));
+  memset(delayPopularity,0,256*sizeof(int));
+  memset(chanStream,0,DIV_MAX_CHANS*sizeof(void*));
+  memset(chanStreamOff,0,DIV_MAX_CHANS*sizeof(unsigned int));
+  memset(sortedCmdPopularity,0,16*sizeof(int));
+  memset(sortedDelayPopularity,0,16*sizeof(int));
+  memset(sortedCmd,0,16);
+  memset(sortedDelay,0,16);
+
   SafeWriter* w=new SafeWriter;
   w->init();
 
   // write header
   if (binary) {
     w->write("FCS",4);
+    w->writeI(chans);
+    // offsets
+    for (int i=0; i<chans; i++) {
+      chanStream[i]=new SafeWriter;
+      chanStream[i]->init();
+      w->writeI(0);
+    }
+    // preset delays and speed dial
+    for (int i=0; i<32; i++) {
+      w->writeC(0);
+    }
   } else {
     w->writeText("# Furnace Command Stream\n\n");
 
@@ -451,19 +540,22 @@ SafeWriter* DivEngine::saveCommand(bool binary) {
   bool oldCmdStreamEnabled=cmdStreamEnabled;
   cmdStreamEnabled=true;
   double curDivider=divider;
-  int lastTick=0;
+  int lastTick[DIV_MAX_CHANS];
+
+  memset(lastTick,0,DIV_MAX_CHANS*sizeof(int));
   while (!done) {
     if (nextTick(false,true) || !playing) {
       done=true;
     }
     // get command stream
-    bool wroteTick=false;
+    bool wroteTickGlobal=false;
+    memset(wroteTick,0,DIV_MAX_CHANS*sizeof(bool));
     if (curDivider!=divider) {
       curDivider=divider;
-      WRITE_TICK;
+      WRITE_TICK(0);
       if (binary) {
-        w->writeC(0xfb);
-        w->writeI((int)(curDivider*65536));
+        chanStream[0]->writeC(0xfb);
+        chanStream[0]->writeI((int)(curDivider*65536));
       } else {
         w->writeText(fmt::sprintf(">> SET_RATE %f\n",curDivider));
       }
@@ -486,10 +578,10 @@ SafeWriter* DivEngine::saveCommand(bool binary) {
         case DIV_CMD_PRE_NOTE:
           break;
         default:
-          WRITE_TICK;
+          WRITE_TICK(i.chan);
           if (binary) {
-            w->writeC(i.chan);
-            writePackedCommandValues(w,i);
+            cmdPopularity[i.cmd]++;
+            writePackedCommandValues(chanStream[i.chan],i);
           } else {
             w->writeText(fmt::sprintf("  %d: %s %d %d\n",i.chan,cmdName[i.cmd],i.value,i.value2));
           }
@@ -502,7 +594,185 @@ SafeWriter* DivEngine::saveCommand(bool binary) {
   cmdStreamEnabled=oldCmdStreamEnabled;
 
   if (binary) {
-    w->writeC(0xff);
+    int sortCand=-1;
+    int sortPos=0;
+    while (sortPos<16) {
+      sortCand=-1;
+      for (int i=DIV_CMD_SAMPLE_MODE; i<256; i++) {
+        if (cmdPopularity[i]) {
+          if (sortCand==-1) {
+            sortCand=i;
+          } else if (cmdPopularity[sortCand]<cmdPopularity[i]) {
+            sortCand=i;
+          }
+        }
+      }
+      if (sortCand==-1) break;
+
+      sortedCmdPopularity[sortPos]=cmdPopularity[sortCand];
+      sortedCmd[sortPos]=sortCand;
+      cmdPopularity[sortCand]=0;
+      sortPos++;
+    }
+
+    sortCand=-1;
+    sortPos=0;
+    while (sortPos<16) {
+      sortCand=-1;
+      for (int i=0; i<256; i++) {
+        if (delayPopularity[i]) {
+          if (sortCand==-1) {
+            sortCand=i;
+          } else if (delayPopularity[sortCand]<delayPopularity[i]) {
+            sortCand=i;
+          }
+        }
+      }
+      if (sortCand==-1) break;
+
+      sortedDelayPopularity[sortPos]=delayPopularity[sortCand];
+      sortedDelay[sortPos]=sortCand;
+      delayPopularity[sortCand]=0;
+      sortPos++;
+    }
+
+    for (int i=0; i<chans; i++) {
+      chanStream[i]->writeC(0xff);
+      // optimize stream
+      SafeWriter* oldStream=chanStream[i];
+      SafeReader* reader=oldStream->toReader();
+      chanStream[i]=new SafeWriter;
+      chanStream[i]->init();
+
+      while (1) {
+        try {
+          unsigned char next=reader->readC();
+          switch (next) {
+            case 0xb8: // instrument
+            case 0xc0: // pre porta
+            case 0xc3: // vibrato range
+            case 0xc4: // vibrato shape
+            case 0xc5: // pitch
+            case 0xc7: // volume
+            case 0xca: // legato
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              break;
+            case 0xbe: // panning
+            case 0xc2: // vibrato
+            case 0xc6: // arpeggio
+            case 0xc8: // vol slide
+            case 0xc9: // porta
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              break;
+            case 0xf0: { // full command (pre)
+              unsigned char cmd=reader->readC();
+              bool foundShort=false;
+              for (int j=0; j<16; j++) {
+                if (sortedCmd[j]==cmd) {
+                  chanStream[i]->writeC(0xd0+j);
+                  foundShort=true;
+                  break;
+                }
+              }
+              if (!foundShort) {
+                chanStream[i]->writeC(0xf7); // full command
+                chanStream[i]->writeC(cmd);
+              }
+
+              unsigned char cmdLen=reader->readC();
+              logD("cmdLen: %d",cmdLen);
+              for (unsigned char j=0; j<cmdLen; j++) {
+                next=reader->readC();
+                chanStream[i]->writeC(next);
+              }
+              break;
+            }
+            case 0xfb: // tick rate
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              next=reader->readC();
+              chanStream[i]->writeC(next);
+              break;
+            case 0xfc: { // 16-bit wait
+              unsigned short delay=reader->readS();
+              bool foundShort=false;
+              for (int j=0; j<16; j++) {
+                if (sortedDelay[j]==delay) {
+                  chanStream[i]->writeC(0xe0+j);
+                  foundShort=true;
+                  break;
+                }
+              }
+              if (!foundShort) {
+                chanStream[i]->writeC(next);
+                chanStream[i]->writeS(delay);
+              }
+              break;
+            }
+            case 0xfd: { // 8-bit wait
+              unsigned char delay=reader->readC();
+              bool foundShort=false;
+              for (int j=0; j<16; j++) {
+                if (sortedDelay[j]==delay) {
+                  chanStream[i]->writeC(0xe0+j);
+                  foundShort=true;
+                  break;
+                }
+              }
+              if (!foundShort) {
+                chanStream[i]->writeC(next);
+                chanStream[i]->writeC(delay);
+              }
+              break;
+            }
+            default:
+              chanStream[i]->writeC(next);
+              break;
+          }
+        } catch (EndOfFileException& e) {
+          break;
+        }
+      }
+
+      oldStream->finish();
+      delete oldStream;
+    }
+
+    for (int i=0; i<chans; i++) {
+      chanStreamOff[i]=w->tell();
+      logI("- %d: off %x size %ld",i,chanStreamOff[i],chanStream[i]->size());
+      w->write(chanStream[i]->getFinalBuf(),chanStream[i]->size());
+      chanStream[i]->finish();
+      delete chanStream[i];
+    }
+
+    w->seek(8,SEEK_SET);
+    for (int i=0; i<chans; i++) {
+      w->writeI(chanStreamOff[i]);
+    }
+
+    logD("delay popularity:");
+    for (int i=0; i<16; i++) {
+      w->writeC(sortedDelay[i]);
+      if (sortedDelayPopularity[i]) logD("- %d: %d",sortedDelay[i],sortedDelayPopularity[i]);
+    }
+
+    logD("command popularity:");
+    for (int i=0; i<16; i++) {
+      w->writeC(sortedCmd[i]);
+      if (sortedCmdPopularity[i]) logD("- %s: %d",cmdName[sortedCmd[i]],sortedCmdPopularity[i]);
+    }
   } else {
     if (!playing) {
       w->writeText(">> END\n");
@@ -985,6 +1255,16 @@ int DivEngine::loadSampleROM(String path, ssize_t expectedSize, unsigned char*& 
   return 0;
 }
 
+unsigned int DivEngine::getSampleFormatMask() {
+  unsigned int formatMask=1U<<16; // 16-bit is always on
+  for (int i=0; i<song.systemLen; i++) {
+    const DivSysDef* s=getSystemDef(song.system[i]);
+    if (s==NULL) continue;
+    formatMask|=s->sampleFormatMask;
+  }
+  return formatMask;
+}
+
 int DivEngine::loadSampleROMs() {
   if (yrw801ROM!=NULL) {
     delete[] yrw801ROM;
@@ -1016,6 +1296,8 @@ void DivEngine::renderSamples() {
   sPreview.pos=0;
   sPreview.dir=false;
 
+  logD("rendering samples...");
+
   // step 0: make sample format mask
   unsigned int formatMask=1U<<16; // 16-bit is always on
   for (int i=0; i<song.systemLen; i++) {
@@ -1037,21 +1319,8 @@ void DivEngine::renderSamples() {
   }
 }
 
-String DivEngine::encodeSysDesc(std::vector<int>& desc) {
-  String ret;
-  if (desc[0]!=0) {
-    int index=0;
-    for (size_t i=0; i<desc.size(); i+=4) {
-      ret+=fmt::sprintf("%d %d %d %d ",systemToFileFur((DivSystem)desc[i]),desc[i+1],desc[i+2],desc[i+3]);
-      index++;
-      if (index>=32) break;
-    }
-  }
-  return ret;
-}
-
-std::vector<int> DivEngine::decodeSysDesc(String desc) {
-  std::vector<int> ret;
+String DivEngine::decodeSysDesc(String desc) {
+  DivConfig newDesc;
   bool hasVal=false;
   bool negative=false;
   int val=0;
@@ -1060,6 +1329,7 @@ std::vector<int> DivEngine::decodeSysDesc(String desc) {
   int sysVol=0;
   int sysPan=0;
   int sysFlags=0;
+  int curSys=0;
   desc+=' '; // ha
   for (char i: desc) {
     switch (i) {
@@ -1082,15 +1352,19 @@ std::vector<int> DivEngine::decodeSysDesc(String desc) {
             case 3:
               sysFlags=val;
 
-              if (systemFromFileFur(sysID)!=0) {
+              if (sysID!=0) {
                 if (sysVol<-128) sysVol=-128;
                 if (sysVol>127) sysVol=127;
                 if (sysPan<-128) sysPan=-128;
                 if (sysPan>127) sysPan=127;
-                ret.push_back(systemFromFileFur(sysID));
-                ret.push_back(sysVol);
-                ret.push_back(sysPan);
-                ret.push_back(sysFlags);
+                newDesc.set(fmt::sprintf("id%d",curSys),sysID);
+                newDesc.set(fmt::sprintf("vol%d",curSys),sysVol);
+                newDesc.set(fmt::sprintf("pan%d",curSys),sysPan);
+                DivConfig newFlagsC;
+                newFlagsC.clear();
+                convertOldFlags((unsigned int)sysFlags,newFlagsC,systemFromFileFur(sysID));
+                newDesc.set(fmt::sprintf("flags%d",curSys),newFlagsC.toBase64());
+                curSys++;
               }
 
               curStage=0;
@@ -1111,28 +1385,35 @@ std::vector<int> DivEngine::decodeSysDesc(String desc) {
         break;
     }
   }
-  return ret;
+
+  return newDesc.toBase64();
 }
 
-void DivEngine::initSongWithDesc(const int* description) {
+void DivEngine::initSongWithDesc(const char* description) {
   int chanCount=0;
-  if (description[0]!=0) {
-    int index=0;
-    for (int i=0; description[i]; i+=4) {
-      song.system[index]=(DivSystem)description[i];
-      song.systemVol[index]=description[i+1];
-      song.systemPan[index]=description[i+2];
-      song.systemFlags[index]=description[i+3];
-      index++;
-      chanCount+=getChannelCount(song.system[index]);
-      if (chanCount>=DIV_MAX_CHANS) break;
-      if (index>=32) break;
+  DivConfig c;
+  c.loadFromBase64(description);
+  int index=0;
+  for (; index<32; index++) {
+    song.system[index]=systemFromFileFur(c.getInt(fmt::sprintf("id%d",index),0));
+    if (song.system[index]==DIV_SYSTEM_NULL) {
+      break;
     }
-    song.systemLen=index;
+    chanCount+=getChannelCount(song.system[index]);
+    if (chanCount>=DIV_MAX_CHANS) {
+      song.system[index]=DIV_SYSTEM_NULL;
+      break;
+    }
+    song.systemVol[index]=c.getInt(fmt::sprintf("vol%d",index),DIV_SYSTEM_NULL);
+    song.systemPan[index]=c.getInt(fmt::sprintf("pan%d",index),DIV_SYSTEM_NULL);
+    song.systemFlags[index].clear();
+    String flags=c.getString(fmt::sprintf("flags%d",index),"");
+    song.systemFlags[index].loadFromBase64(flags.c_str());
   }
+  song.systemLen=index;
 }
 
-void DivEngine::createNew(const int* description, String sysName) {
+void DivEngine::createNew(const char* description, String sysName) {
   quitDispatch();
   BUSY_BEGIN;
   saveLock.lock();
@@ -1345,7 +1626,7 @@ void DivEngine::changeSystem(int index, DivSystem which, bool preserveOrder) {
   }
 
   song.system[index]=which;
-  song.systemFlags[index]=0;
+  song.systemFlags[index].clear();
   recalcChans();
   saveLock.unlock();
   BUSY_END;
@@ -1371,7 +1652,7 @@ bool DivEngine::addSystem(DivSystem which) {
   song.system[song.systemLen]=which;
   song.systemVol[song.systemLen]=64;
   song.systemPan[song.systemLen]=0;
-  song.systemFlags[song.systemLen++]=0;
+  song.systemFlags[song.systemLen++].clear();
   recalcChans();
   saveLock.unlock();
   BUSY_END;
@@ -1541,9 +1822,10 @@ bool DivEngine::swapSystem(int src, int dest, bool preserveOrder) {
   song.systemPan[dest]^=song.systemPan[src];
   song.systemPan[src]^=song.systemPan[dest];
 
-  song.systemFlags[src]^=song.systemFlags[dest];
-  song.systemFlags[dest]^=song.systemFlags[src];
-  song.systemFlags[src]^=song.systemFlags[dest];
+  // I am kinda scared to use std::swap
+  DivConfig oldFlags=song.systemFlags[src];
+  song.systemFlags[src]=song.systemFlags[dest];
+  song.systemFlags[dest]=oldFlags;
 
   recalcChans();
   saveLock.unlock();
@@ -1576,6 +1858,40 @@ String DivEngine::getLastError() {
 
 String DivEngine::getWarnings() {
   return warnings;
+}
+
+String DivEngine::getPlaybackDebugInfo() {
+  return fmt::sprintf(
+    "curOrder: %d\n"
+    "prevOrder: %d\n"
+    "curRow: %d\n"
+    "prevRow: %d\n"
+    "ticks: %d\n"
+    "subticks: %d\n"
+    "totalLoops: %d\n"
+    "lastLoopPos: %d\n"
+    "nextSpeed: %d\n"
+    "divider: %f\n"
+    "cycles: %d\n"
+    "clockDrift: %f\n"
+    "changeOrd: %d\n"
+    "changePos: %d\n"
+    "totalSeconds: %d\n"
+    "totalTicks: %d\n"
+    "totalTicksR: %d\n"
+    "totalCmds: %d\n"
+    "lastCmds: %d\n"
+    "cmdsPerSecond: %d\n"
+    "globalPitch: %d\n"
+    "extValue: %d\n"
+    "speed1: %d\n"
+    "speed2: %d\n"
+    "tempoAccum: %d\n"
+    "totalProcessed: %d\n",
+    curOrder,prevOrder,curRow,prevRow,ticks,subticks,totalLoops,lastLoopPos,nextSpeed,divider,cycles,clockDrift,
+    changeOrd,changePos,totalSeconds,totalTicks,totalTicksR,totalCmds,lastCmds,cmdsPerSecond,globalPitch,
+    (int)extValue,(int)speed1,(int)speed2,(int)tempoAccum,(int)totalProcessed
+  );
 }
 
 DivInstrument* DivEngine::getIns(int index, DivInstrumentType fallbackType) {
@@ -1701,6 +2017,7 @@ void DivEngine::playSub(bool preserveDrift, int goalRow) {
   skipping=true;
   memset(walked,0,8192);
   for (int i=0; i<song.systemLen; i++) disCont[i].dispatch->setSkipRegisterWrites(true);
+  logV("goal: %d goalRow: %d",goal,goalRow);
   while (playing && curOrder<goal) {
     if (nextTick(preserveDrift)) {
       skipping=false;
@@ -1714,6 +2031,7 @@ void DivEngine::playSub(bool preserveDrift, int goalRow) {
       return;
     }
     if (oldOrder!=curOrder) break;
+    if (ticks-((tempoAccum+curSubSong->virtualTempoN)/MAX(1,curSubSong->virtualTempoD))<1 && curRow>=goalRow) break;
   }
   for (int i=0; i<song.systemLen; i++) disCont[i].dispatch->setSkipRegisterWrites(false);
   if (goal>0 || goalRow>0) {
@@ -1734,6 +2052,7 @@ void DivEngine::playSub(bool preserveDrift, int goalRow) {
     subticks=1;
     prevOrder=curOrder;
     prevRow=curRow;
+    tempoAccum=0;
   }
   skipping=false;
   cmdStream.clear();
@@ -1874,6 +2193,7 @@ void DivEngine::play() {
   sPreview.wave=-1;
   sPreview.pos=0;
   sPreview.dir=false;
+  shallStop=false;
   if (stepPlay==0) {
     freelance=false;
     playSub(false);
@@ -2033,6 +2353,7 @@ void DivEngine::reset() {
   speed1=curSubSong->speed1;
   speed2=curSubSong->speed2;
   firstTick=false;
+  shallStop=false;
   nextSpeed=speed1;
   divider=60;
   if (curSubSong->customTempo) {
@@ -2124,12 +2445,13 @@ void DivEngine::previewSample(int sample, int note, int pStart, int pEnd) {
   blip_clear(samp_bb);
   double rate=song.sample[sample]->rate;
   if (note>=0) {
-    rate=(song.tuning*pow(2.0,(double)(note+3)/12.0)*((double)song.sample[sample]->centerRate/8363.0));
+    rate=(pow(2.0,(double)(note)/12.0)*((double)song.sample[sample]->centerRate)*0.0625);
     if (rate<=0) rate=song.sample[sample]->rate;
   }
   if (rate<100) rate=100;
   blip_set_rates(samp_bb,rate,got.rate);
   samp_prevSample=0;
+  sPreview.rate=rate;
   sPreview.pos=(sPreview.pBegin>=0)?sPreview.pBegin:0;
   sPreview.sample=sample;
   sPreview.wave=-1;
@@ -2163,6 +2485,7 @@ void DivEngine::previewWave(int wave, int note) {
   if (rate<100) rate=100;
   blip_set_rates(samp_bb,rate,got.rate);
   samp_prevSample=0;
+  sPreview.rate=rate;
   sPreview.pos=0;
   sPreview.sample=-1;
   sPreview.wave=wave;
@@ -2176,6 +2499,18 @@ void DivEngine::stopWavePreview() {
   sPreview.pos=0;
   sPreview.dir=false;
   BUSY_END;
+}
+
+bool DivEngine::isPreviewingSample() {
+  return (sPreview.sample>=0 && sPreview.sample<(int)song.sample.size());
+}
+
+int DivEngine::getSamplePreviewPos() {
+  return sPreview.pos;
+}
+
+double DivEngine::getSamplePreviewRate() {
+  return sPreview.rate;
 }
 
 String DivEngine::getConfigPath() {
@@ -3239,7 +3574,7 @@ void DivEngine::exchangeIns(int one, int two) {
     for (size_t j=0; j<song.subsong.size(); j++) {
       for (int k=0; k<256; k++) {
         if (song.subsong[j]->pat[i].data[k]==NULL) continue;
-        for (int l=0; l<curSubSong->patLen; l++) {
+        for (int l=0; l<song.subsong[j]->patLen; l++) {
           if (song.subsong[j]->pat[i].data[k]->data[l][2]==one) {
             song.subsong[j]->pat[i].data[k]->data[l][2]=two;
           } else if (song.subsong[j]->pat[i].data[k]->data[l][2]==two) {
@@ -3287,6 +3622,7 @@ bool DivEngine::moveSampleUp(int which) {
   song.sample[which]=song.sample[which-1];
   song.sample[which-1]=prev;
   saveLock.unlock();
+  renderSamples();
   BUSY_END;
   return true;
 }
@@ -3327,6 +3663,7 @@ bool DivEngine::moveSampleDown(int which) {
   song.sample[which]=song.sample[which+1];
   song.sample[which+1]=prev;
   saveLock.unlock();
+  renderSamples();
   BUSY_END;
   return true;
 }
@@ -3466,11 +3803,8 @@ void DivEngine::setOrder(unsigned char order) {
   BUSY_END;
 }
 
-void DivEngine::setSysFlags(int system, unsigned int flags, bool restart) {
+void DivEngine::updateSysFlags(int system, bool restart) {
   BUSY_BEGIN_SOFT;
-  saveLock.lock();
-  song.systemFlags[system]=flags;
-  saveLock.unlock();
   disCont[system].dispatch->setFlags(song.systemFlags[system]);
   disCont[system].setRates(got.rate);
   if (restart && isPlaying()) {
@@ -3822,11 +4156,14 @@ bool DivEngine::init() {
   // set default system preset
   if (!hasLoadedSomething) {
     logD("setting default preset");
-    std::vector<int> preset=decodeSysDesc(getConfString("initialSys",""));
+    String preset=getConfString("initialSys2","");
+    if (preset.empty()) {
+      // try loading old preset
+      preset=decodeSysDesc(getConfString("initialSys",""));
+    }
     logD("preset size %ld",preset.size());
     if (preset.size()>0 && (preset.size()&3)==0) {
-      preset.push_back(0);
-      initSongWithDesc(preset.data());
+      initSongWithDesc(preset.c_str());
     }
     String sysName=getConfString("initialSysName","");
     if (sysName=="") {

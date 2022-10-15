@@ -174,7 +174,8 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
     ds.noOPN2Vol=true;
     ds.newVolumeScaling=false;
     ds.volMacroLinger=false;
-    ds.brokenOutVol=true; // ???
+    ds.brokenOutVol=true;
+    ds.brokenOutVol2=true;
     ds.e1e2StopOnSameNote=true;
     ds.brokenPortaArp=false;
     ds.snNoLowPeriods=true;
@@ -205,6 +206,9 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
     /*if (ds.version<21 && (ds.system[0]==DIV_SYSTEM_C64_6581 || ds.system[0]==DIV_SYSTEM_C64_8580)) {
       ds.tuning=433.2;
     }*/
+
+    // Game Boy arp+soundLen screwery
+    ds.systemFlags[0].set("enoughAlready",true);
 
     logI("reading module data...");
     if (ds.version>0x0c) {
@@ -489,6 +493,19 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
                ins->fm.op[j].d2r,
                ins->fm.op[j].ssgEnv
                );
+        }
+
+        // swap alg operator 2 and 3 if YMU759
+        if (ds.system[0]==DIV_SYSTEM_YMU759 && ins->fm.ops==4) {
+          DivInstrumentFM::Operator oldOp=ins->fm.op[2];
+          ins->fm.op[2]=ins->fm.op[1];
+          ins->fm.op[1]=oldOp;
+
+          if (ins->fm.alg==1) {
+            ins->fm.alg=2;
+          } else if (ins->fm.alg==2) {
+            ins->fm.alg=1;
+          }
         }
       } else { // STD
         if (ds.system[0]!=DIV_SYSTEM_GB || ds.version<0x12) {
@@ -977,11 +994,587 @@ bool DivEngine::loadDMF(unsigned char* file, size_t len) {
   return true;
 }
 
+void DivEngine::convertOldFlags(unsigned int oldFlags, DivConfig& newFlags, DivSystem sys) {
+  newFlags.clear();
+
+  switch (sys) {
+    case DIV_SYSTEM_SMS:
+      switch (oldFlags&0xff03) {
+        case 0x0000:
+          newFlags.set("clockSel",0);
+          break;
+        case 0x0001:
+          newFlags.set("clockSel",1);
+          break;
+        case 0x0002:
+          newFlags.set("clockSel",2);
+          break;
+        case 0x0003:
+          newFlags.set("clockSel",3);
+          break;
+        case 0x0100:
+          newFlags.set("clockSel",4);
+          break;
+        case 0x0101:
+          newFlags.set("clockSel",5);
+          break;
+        case 0x0102:
+          newFlags.set("clockSel",6);
+          break;
+      }
+      switch (oldFlags&0xcc) {
+        case 0x00:
+          newFlags.set("chipType",0);
+          break;
+        case 0x04:
+          newFlags.set("chipType",1);
+          break;
+        case 0x08:
+          newFlags.set("chipType",2);
+          break;
+        case 0x0c:
+          newFlags.set("chipType",3);
+          break;
+        case 0x40:
+          newFlags.set("chipType",4);
+          break;
+        case 0x44:
+          newFlags.set("chipType",5);
+          break;
+        case 0x48:
+          newFlags.set("chipType",6);
+          break;
+        case 0x4c:
+          newFlags.set("chipType",7);
+          break;
+        case 0x80:
+          newFlags.set("chipType",8);
+          break;
+        case 0x84:
+          newFlags.set("chipType",9);
+          break;
+      }
+      if (oldFlags&16) newFlags.set("noPhaseReset",true);
+      break;
+    case DIV_SYSTEM_GB:
+      newFlags.set("chipType",(int)(oldFlags&3));
+      if (oldFlags&8) newFlags.set("noAntiClick",true);
+      break;
+    case DIV_SYSTEM_PCE:
+      newFlags.set("clockSel",(int)(oldFlags&1));
+      newFlags.set("chipType",(oldFlags&4)?1:0);
+      if (oldFlags&8) newFlags.set("noAntiClick",true);
+      break;
+    case DIV_SYSTEM_NES:
+    case DIV_SYSTEM_VRC6:
+    case DIV_SYSTEM_FDS:
+    case DIV_SYSTEM_MMC5:
+    case DIV_SYSTEM_SAA1099:
+    case DIV_SYSTEM_OPZ:
+      switch (oldFlags) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_C64_6581:
+    case DIV_SYSTEM_C64_8580:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_YM2610:
+    case DIV_SYSTEM_YM2610_EXT:
+    case DIV_SYSTEM_YM2610_FULL:
+    case DIV_SYSTEM_YM2610_FULL_EXT:
+    case DIV_SYSTEM_YM2610B:
+    case DIV_SYSTEM_YM2610B_EXT:
+      switch (oldFlags&0xff) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_AY8910:
+    case DIV_SYSTEM_AY8930:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+        case 5:
+          newFlags.set("clockSel",5);
+          break;
+        case 6:
+          newFlags.set("clockSel",6);
+          break;
+        case 7:
+          newFlags.set("clockSel",7);
+          break;
+        case 8:
+          newFlags.set("clockSel",8);
+          break;
+        case 9:
+          newFlags.set("clockSel",9);
+          break;
+        case 10:
+          newFlags.set("clockSel",10);
+          break;
+        case 11:
+          newFlags.set("clockSel",11);
+          break;
+        case 12:
+          newFlags.set("clockSel",12);
+          break;
+        case 13:
+          if (sys==DIV_SYSTEM_AY8910) newFlags.set("clockSel",13);
+          break;
+        case 14:
+          if (sys==DIV_SYSTEM_AY8910) newFlags.set("clockSel",14);
+          break;
+      }
+      if (sys==DIV_SYSTEM_AY8910) switch ((oldFlags>>4)&3) {
+        case 0:
+          newFlags.set("chipType",0);
+          break;
+        case 1:
+          newFlags.set("chipType",1);
+          break;
+        case 2:
+          newFlags.set("chipType",2);
+          break;
+        case 3:
+          newFlags.set("chipType",3);
+          break;
+      }
+      if (oldFlags&64) newFlags.set("stereo",true);
+      if (oldFlags&128) newFlags.set("halfClock",true);
+      newFlags.set("stereoSep",(int)((oldFlags>>8)&255));
+      break;
+    case DIV_SYSTEM_AMIGA:
+      if (oldFlags&1) newFlags.set("clockSel",1);
+      if (oldFlags&2) newFlags.set("chipType",1);
+      if (oldFlags&4) newFlags.set("bypassLimits",true);
+      newFlags.set("stereoSep",(int)((oldFlags>>8)&127));
+      break;
+    case DIV_SYSTEM_YM2151:
+      switch (oldFlags&255) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_YM2612:
+    case DIV_SYSTEM_YM2612_EXT:
+    case DIV_SYSTEM_YM2612_FRAC:
+    case DIV_SYSTEM_YM2612_FRAC_EXT:
+      switch (oldFlags&0x7fffffff) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+      }
+      if (oldFlags&0x80000000) newFlags.set("ladderEffect",true);
+      break;
+    case DIV_SYSTEM_TIA:
+      newFlags.set("clockSel",(int)(oldFlags&1));
+      switch ((oldFlags>>1)&3) {
+        case 0:
+          newFlags.set("mixingType",0);
+          break;
+        case 1:
+          newFlags.set("mixingType",1);
+          break;
+        case 2:
+          newFlags.set("mixingType",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_VIC20:
+      newFlags.set("clockSel",(int)(oldFlags&1));
+      break;
+    case DIV_SYSTEM_SNES:
+      newFlags.set("volScaleL",(int)(oldFlags&127));
+      newFlags.set("volScaleR",(int)((oldFlags>>8)&127));
+      break;
+    case DIV_SYSTEM_OPLL:
+    case DIV_SYSTEM_OPLL_DRUMS:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+      }
+      switch (oldFlags>>4) {
+        case 0:
+          newFlags.set("patchSet",0);
+          break;
+        case 1:
+          newFlags.set("patchSet",1);
+          break;
+        case 2:
+          newFlags.set("patchSet",2);
+          break;
+        case 3:
+          newFlags.set("patchSet",3);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_N163:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      newFlags.set("channels",(int)((oldFlags>>4)&7));
+      if (oldFlags&128) newFlags.set("multiplex",true);
+      break;
+    case DIV_SYSTEM_OPN:
+    case DIV_SYSTEM_OPN_EXT:
+      switch (oldFlags&31) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+        case 5:
+          newFlags.set("clockSel",5);
+          break;
+      }
+      switch ((oldFlags>>5)&3) {
+        case 0:
+          newFlags.set("prescale",0);
+          break;
+        case 1:
+          newFlags.set("prescale",1);
+          break;
+        case 2:
+          newFlags.set("prescale",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_PC98:
+    case DIV_SYSTEM_PC98_EXT:
+      switch (oldFlags&31) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+      }
+      switch ((oldFlags>>5)&3) {
+        case 0:
+          newFlags.set("prescale",0);
+          break;
+        case 1:
+          newFlags.set("prescale",1);
+          break;
+        case 2:
+          newFlags.set("prescale",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_OPL:
+    case DIV_SYSTEM_OPL2:
+    case DIV_SYSTEM_Y8950:
+    case DIV_SYSTEM_OPL_DRUMS:
+    case DIV_SYSTEM_OPL2_DRUMS:
+    case DIV_SYSTEM_Y8950_DRUMS:
+    case DIV_SYSTEM_YMZ280B:
+      switch (oldFlags&0xff) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+        case 5:
+          newFlags.set("clockSel",5);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_OPL3:
+    case DIV_SYSTEM_OPL3_DRUMS:
+      switch (oldFlags&0xff) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_PCSPKR:
+      newFlags.set("speakerType",(int)(oldFlags&3));
+      break;
+    case DIV_SYSTEM_RF5C68:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      switch (oldFlags>>4) {
+        case 0:
+          newFlags.set("chipType",0);
+          break;
+        case 1:
+          newFlags.set("chipType",0);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_VRC7:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_SFX_BEEPER:
+      newFlags.set("clockSel",(int)(oldFlags&1));
+      break;
+    case DIV_SYSTEM_SCC:
+    case DIV_SYSTEM_SCC_PLUS:
+      switch (oldFlags&63) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_MSM6295:
+      switch (oldFlags&63) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+        case 4:
+          newFlags.set("clockSel",4);
+          break;
+        case 5:
+          newFlags.set("clockSel",5);
+          break;
+        case 6:
+          newFlags.set("clockSel",6);
+          break;
+        case 7:
+          newFlags.set("clockSel",7);
+          break;
+        case 8:
+          newFlags.set("clockSel",8);
+          break;
+        case 9:
+          newFlags.set("clockSel",9);
+          break;
+        case 10:
+          newFlags.set("clockSel",10);
+          break;
+        case 11:
+          newFlags.set("clockSel",11);
+          break;
+        case 12:
+          newFlags.set("clockSel",12);
+          break;
+        case 13:
+          newFlags.set("clockSel",13);
+          break;
+        case 14:
+          newFlags.set("clockSel",14);
+          break;
+      }
+      if (oldFlags&128) newFlags.set("rateSel",true);
+      break;
+    case DIV_SYSTEM_MSM6258:
+      switch (oldFlags) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+        case 3:
+          newFlags.set("clockSel",3);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_OPL4:
+    case DIV_SYSTEM_OPL4_DRUMS:
+      switch (oldFlags&0xff) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+        case 2:
+          newFlags.set("clockSel",2);
+          break;
+      }
+      break;
+    case DIV_SYSTEM_X1_010:
+      switch (oldFlags&15) {
+        case 0:
+          newFlags.set("clockSel",0);
+          break;
+        case 1:
+          newFlags.set("clockSel",1);
+          break;
+      }
+      if (oldFlags&16) newFlags.set("stereo",true);
+      break;
+    case DIV_SYSTEM_SOUND_UNIT:
+      newFlags.set("clockSel",(int)(oldFlags&1));
+      if (oldFlags&4) newFlags.set("echo",true);
+      if (oldFlags&8) newFlags.set("swapEcho",true);
+      newFlags.set("sampleMemSize",(int)((oldFlags>>4)&1));
+      if (oldFlags&32) newFlags.set("pdm",true);
+      newFlags.set("echoDelay",(int)((oldFlags>>8)&63));
+      newFlags.set("echoFeedback",(int)((oldFlags>>16)&15));
+      newFlags.set("echoResolution",(int)((oldFlags>>20)&15));
+      newFlags.set("echoVol",(int)((oldFlags>>24)&255));
+      break;
+    case DIV_SYSTEM_PCM_DAC:
+      if (!oldFlags) oldFlags=0x1f0000|44099;
+      newFlags.set("rate",(int)((oldFlags&0xffff)+1));
+      newFlags.set("outDepth",(int)((oldFlags>>16)&15));
+      if (oldFlags&0x100000) newFlags.set("stereo",true);
+      break;
+    case DIV_SYSTEM_QSOUND:
+      newFlags.set("echoDelay",(int)(oldFlags&0xfff));
+      newFlags.set("echoFeedback",(int)((oldFlags>>12)&255));
+      break;
+    default:
+      break;
+  }
+}
+
 bool DivEngine::loadFur(unsigned char* file, size_t len) {
   unsigned int insPtr[256];
   unsigned int wavePtr[256];
   unsigned int samplePtr[256];
   unsigned int subSongPtr[256];
+  unsigned int sysFlagsPtr[32];
   std::vector<int> patPtr;
   int numberOfSubSongs=0;
   char magic[5];
@@ -1110,6 +1703,9 @@ bool DivEngine::loadFur(unsigned char* file, size_t len) {
     if (ds.version<117) {
       ds.disableSampleMacro=true;
     }
+    if (ds.version<121) {
+      ds.brokenOutVol2=false;
+    }
     ds.isDMF=false;
 
     reader.readS(); // reserved
@@ -1235,7 +1831,7 @@ bool DivEngine::loadFur(unsigned char* file, size_t len) {
 
     // system props
     for (int i=0; i<32; i++) {
-      ds.systemFlags[i]=reader.readI();
+      sysFlagsPtr[i]=reader.readI();
     }
 
     // handle compound systems
@@ -1547,7 +2143,12 @@ bool DivEngine::loadFur(unsigned char* file, size_t len) {
       } else {
         reader.readC();
       }
-      for (int i=0; i<2; i++) {
+      if (ds.version>=121) {
+        ds.brokenOutVol2=reader.readC();
+      } else {
+        reader.readC();
+      }
+      for (int i=0; i<1; i++) {
         reader.readC();
       }
     }
@@ -1585,6 +2186,40 @@ bool DivEngine::loadFur(unsigned char* file, size_t len) {
     } else {
       ds.systemName=getSongSystemLegacyName(ds,!getConfInt("noMultiSystem",0));
       ds.autoSystem=true;
+    }
+
+    // read system flags
+    if (ds.version>=119) {
+      logD("reading chip flags...");
+      for (int i=0; i<32; i++) {
+        if (sysFlagsPtr[i]==0) continue;
+
+        if (!reader.seek(sysFlagsPtr[i],SEEK_SET)) {
+          logE("couldn't seek to chip %d flags!",i+1);
+          lastError=fmt::sprintf("couldn't seek to chip %d flags!",i+1);
+          ds.unload();
+          delete[] file;
+          return false;
+        }
+
+        reader.read(magic,4);
+        if (strcmp(magic,"FLAG")!=0) {
+          logE("%d: invalid flag header!",i);
+          lastError="invalid flag header!";
+          ds.unload();
+          delete[] file;
+          return false;
+        }
+        reader.readI();
+
+        String data=reader.readString();
+        ds.systemFlags[i].loadFromMemory(data.c_str());
+      }
+    } else {
+      logD("reading old chip flags...");
+      for (int i=0; i<ds.systemLen; i++) {
+        convertOldFlags(sysFlagsPtr[i],ds.systemFlags[i],ds.system[i]);
+      }
     }
 
     // read subsongs
@@ -2373,7 +3008,10 @@ bool DivEngine::loadMod(unsigned char* file, size_t len) {
     ds.systemLen=(chCount+3)/4;
     for(int i=0; i<ds.systemLen; i++) {
       ds.system[i]=DIV_SYSTEM_AMIGA;
-      ds.systemFlags[i]=1|(80<<8)|(bypassLimits?4:0)|((ds.systemLen>1 || bypassLimits)?2:0); // PAL
+      ds.systemFlags[i].set("clockSel",1); // PAL
+      ds.systemFlags[i].set("stereoSep",80);
+      ds.systemFlags[i].set("bypassLimits",bypassLimits);
+      ds.systemFlags[i].set("chipType",(bool)(ds.systemLen>1 || bypassLimits));
     }
     for(int i=0; i<chCount; i++) {
       ds.subsong[0]->chanShow[i]=true;
@@ -2579,7 +3217,8 @@ bool DivEngine::loadFC(unsigned char* file, size_t len) {
     ds.system[0]=DIV_SYSTEM_AMIGA;
     ds.systemVol[0]=64;
     ds.systemPan[0]=0;
-    ds.systemFlags[0]=1|(80<<8); // PAL
+    ds.systemFlags[0].set("clockSel",1); // PAL
+    ds.systemFlags[0].set("stereoSep",80);
     ds.systemName="Amiga";
 
     seqLen=reader.readI_BE();
@@ -3219,11 +3858,11 @@ bool DivEngine::loadFTM(unsigned char* file, size_t len) {
         }
         if (expansions&16) {
           ds.system[systemID]=DIV_SYSTEM_N163;
-          ds.systemFlags[systemID++]=n163Chans;
+          ds.systemFlags[systemID++].set("channels",(int)n163Chans);
         }
         if (expansions&32) {
           ds.system[systemID]=DIV_SYSTEM_AY8910;
-          ds.systemFlags[systemID++]=38; // Sunsoft 5B
+          ds.systemFlags[systemID++].set("chipType",2); // Sunsoft 5B
         }
         ds.systemLen=systemID;
 
@@ -3605,11 +4244,12 @@ struct PatToWrite {
 SafeWriter* DivEngine::saveFur(bool notPrimary) {
   saveLock.lock();
   std::vector<int> subSongPtr;
+  std::vector<int> sysFlagsPtr;
   std::vector<int> insPtr;
   std::vector<int> wavePtr;
   std::vector<int> samplePtr;
   std::vector<int> patPtr;
-  size_t ptrSeek, subSongPtrSeek, blockStartSeek, blockEndSeek;
+  size_t ptrSeek, subSongPtrSeek, sysFlagsPtrSeek, blockStartSeek, blockEndSeek;
   size_t subSongIndex=0;
   DivSubSong* subSong=song.subsong[subSongIndex];
   warnings="";
@@ -3733,8 +4373,10 @@ SafeWriter* DivEngine::saveFur(bool notPrimary) {
     w->writeC(song.systemPan[i]);
   }
 
+  // chip flags (we'll seek here later)
+  sysFlagsPtrSeek=w->tell();
   for (int i=0; i<32; i++) {
-    w->writeI(song.systemFlags[i]);
+    w->writeI(0);
   }
 
   // song name
@@ -3844,7 +4486,8 @@ SafeWriter* DivEngine::saveFur(bool notPrimary) {
   w->writeC(song.jumpTreatment);
   w->writeC(song.autoSystem);
   w->writeC(song.disableSampleMacro);
-  for (int i=0; i<2; i++) {
+  w->writeC(song.brokenOutVol2);
+  for (int i=0; i<1; i++) {
     w->writeC(0);
   }
 
@@ -3926,6 +4569,27 @@ SafeWriter* DivEngine::saveFur(bool notPrimary) {
     for (int i=0; i<chans; i++) {
       w->writeString(subSong->chanShortName[i],false);
     }
+
+    blockEndSeek=w->tell();
+    w->seek(blockStartSeek,SEEK_SET);
+    w->writeI(blockEndSeek-blockStartSeek-4);
+    w->seek(0,SEEK_END);
+  }
+
+  /// CHIP FLAGS
+  for (int i=0; i<song.systemLen; i++) {
+    String data=song.systemFlags[i].toString();
+    if (data.empty()) {
+      sysFlagsPtr.push_back(0);
+      continue;
+    }
+
+    sysFlagsPtr.push_back(w->tell());
+    w->write("FLAG",4);
+    blockStartSeek=w->tell();
+    w->writeI(0);
+
+    w->writeString(data,false);
 
     blockEndSeek=w->tell();
     w->seek(blockStartSeek,SEEK_SET);
@@ -4050,12 +4714,16 @@ SafeWriter* DivEngine::saveFur(bool notPrimary) {
     w->writeI(i);
   }
 
-  /// SUBSONG POINTERS
-  w->seek(subSongPtrSeek,SEEK_SET);
-
   // subsong pointers
+  w->seek(subSongPtrSeek,SEEK_SET);
   for (size_t i=0; i<(song.subsong.size()-1); i++) {
     w->writeI(subSongPtr[i]);
+  }
+
+  // flag pointers
+  w->seek(sysFlagsPtrSeek,SEEK_SET);
+  for (size_t i=0; i<sysFlagsPtr.size(); i++) {
+    w->writeI(sysFlagsPtr[i]);
   }
 
   saveLock.unlock();
@@ -4335,8 +5003,6 @@ SafeWriter* DivEngine::saveDMF(unsigned char version) {
         }
       }
 
-      // TODO: take care of new arp macro format
-      w->writeC(i->std.arpMacro.len);
       bool arpMacroMode=false;
       int arpMacroHowManyFixed=0;
       int realArpMacroLen=i->std.arpMacro.len;
@@ -4354,13 +5020,25 @@ SafeWriter* DivEngine::saveDMF(unsigned char version) {
         }
       }
 
+      if (realArpMacroLen>127) realArpMacroLen=127;
+
+      w->writeC(realArpMacroLen);
+
       if (arpMacroMode) {
         for (int j=0; j<realArpMacroLen; j++) {
-          w->writeI(i->std.arpMacro.val[j]);
+          if ((i->std.arpMacro.val[j]&0xc0000000)==0x40000000 || (i->std.arpMacro.val[j]&0xc0000000)==0x80000000) {
+            w->writeI(i->std.arpMacro.val[j]^0x40000000);
+          } else {
+            w->writeI(i->std.arpMacro.val[j]);
+          }
         }
       } else {
         for (int j=0; j<realArpMacroLen; j++) {
-          w->writeI(i->std.arpMacro.val[j]+12);
+          if ((i->std.arpMacro.val[j]&0xc0000000)==0x40000000 || (i->std.arpMacro.val[j]&0xc0000000)==0x80000000) {
+            w->writeI((i->std.arpMacro.val[j]^0x40000000)+12);
+          } else {
+            w->writeI(i->std.arpMacro.val[j]+12);
+          }
         }
       }
       if (realArpMacroLen>0) {

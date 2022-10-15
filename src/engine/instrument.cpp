@@ -559,13 +559,12 @@ void DivInstrument::putInsData(SafeWriter* w) {
   w->writeC(es5506.envelope.k2Slow);
   
   // SNES
-  // @tildearrow please update this
   w->writeC(snes.useEnv);
-  w->writeC(0);
-  w->writeC(0);
+  w->writeC(snes.gainMode);
+  w->writeC(snes.gain);
   w->writeC(snes.a);
   w->writeC(snes.d);
-  w->writeC(snes.s);
+  w->writeC((snes.s&7)|(snes.sus?8:0));
   w->writeC(snes.r);
 
   // macro speed/delay
@@ -1259,11 +1258,19 @@ DivDataErrors DivInstrument::readInsData(SafeReader& reader, short version) {
   // SNES
   if (version>=109) {
     snes.useEnv=reader.readC();
-    reader.readC();
-    reader.readC();
+    if (version<118) {
+      // why why why
+      reader.readC();
+      reader.readC();
+    } else {
+      snes.gainMode=(DivInstrumentSNES::GainMode)reader.readC();
+      snes.gain=reader.readC();
+    }
     snes.a=reader.readC();
     snes.d=reader.readC();
     snes.s=reader.readC();
+    snes.sus=snes.s&8;
+    snes.s&=7;
     snes.r=reader.readC();
   }
 
@@ -1494,12 +1501,48 @@ bool DivInstrument::saveDMP(const char* path) {
       if (std.volMacro.len>0) w->writeC(std.volMacro.loop);
     }
 
-    w->writeC(std.arpMacro.len);
-    for (int i=0; i<std.arpMacro.len; i++) {
-      w->writeI(std.arpMacro.val[i]+12);
+    bool arpMacroMode=false;
+    int arpMacroHowManyFixed=0;
+    int realArpMacroLen=std.arpMacro.len;
+    for (int j=0; j<std.arpMacro.len; j++) {
+      if ((std.arpMacro.val[j]&0xc0000000)==0x40000000 || (std.arpMacro.val[j]&0xc0000000)==0x80000000) {
+        arpMacroHowManyFixed++;
+      }
     }
-    if (std.arpMacro.len>0) w->writeC(std.arpMacro.loop);
-    w->writeC(std.arpMacro.mode);
+    if (arpMacroHowManyFixed>=std.arpMacro.len-1) {
+      arpMacroMode=true;
+    }
+    if (std.arpMacro.len>0) {
+      if (arpMacroMode && std.arpMacro.val[std.arpMacro.len-1]==0 && std.arpMacro.loop>=std.arpMacro.len) {
+        realArpMacroLen--;
+      }
+    }
+
+    if (realArpMacroLen>127) realArpMacroLen=127;
+
+    w->writeC(realArpMacroLen);
+
+    if (arpMacroMode) {
+      for (int j=0; j<realArpMacroLen; j++) {
+        if ((std.arpMacro.val[j]&0xc0000000)==0x40000000 || (std.arpMacro.val[j]&0xc0000000)==0x80000000) {
+          w->writeI(std.arpMacro.val[j]^0x40000000);
+        } else {
+          w->writeI(std.arpMacro.val[j]);
+        }
+      }
+    } else {
+      for (int j=0; j<realArpMacroLen; j++) {
+        if ((std.arpMacro.val[j]&0xc0000000)==0x40000000 || (std.arpMacro.val[j]&0xc0000000)==0x80000000) {
+          w->writeI((std.arpMacro.val[j]^0x40000000)+12);
+        } else {
+          w->writeI(std.arpMacro.val[j]+12);
+        }
+      }
+    }
+    if (realArpMacroLen>0) {
+      w->writeC(std.arpMacro.loop);
+    }
+    w->writeC(arpMacroMode);
 
     w->writeC(std.dutyMacro.len);
     for (int i=0; i<std.dutyMacro.len; i++) {

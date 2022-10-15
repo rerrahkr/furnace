@@ -47,7 +47,7 @@ void DivPlatformPCMDAC::acquire(short* bufL, short* bufR, size_t start, size_t l
           chan.audPos%=chan.audLen;
           chan.audDir=false;
         }
-        output=(chan.ws.output[chan.audPos]^0x80)<<8;
+        output=(chan.ws.output[chan.audPos]-0x80)<<8;
       } else {
         DivSample* s=parent->getSample(chan.sample);
         if (s->samples>0) {
@@ -195,7 +195,7 @@ int DivPlatformPCMDAC::dispatch(DivCommand c) {
       DivInstrument* ins=parent->getIns(chan.ins,DIV_INS_AMIGA);
       if (ins->amiga.useWave) {
         chan.useWave=true;
-        chan.audLen=ins->amiga.waveLen;
+        chan.audLen=ins->amiga.waveLen+1;
         if (chan.insChanged) {
           if (chan.wave<0) {
             chan.wave=0;
@@ -382,18 +382,17 @@ void DivPlatformPCMDAC::notifyInsDeletion(void* ins) {
   chan.std.notifyInsDeletion((DivInstrument*)ins);
 }
 
-void DivPlatformPCMDAC::setFlags(unsigned int flags) {
+void DivPlatformPCMDAC::setFlags(const DivConfig& flags) {
   // default to 44100Hz 16-bit stereo
-  if (!flags) flags=0x1f0000|44099;
-  rate=(flags&0xffff)+1;
+  rate=flags.getInt("rate",44100);
   // rate can't be too low or the resampler will break
   if (rate<1000) rate=1000;
   chipClock=rate;
-  outDepth=(flags>>16)&0xf;
-  outStereo=(flags>>20)&1;
+  outDepth=(flags.getInt("outDepth",15))&15;
+  outStereo=flags.getBool("stereo",true);
 }
 
-int DivPlatformPCMDAC::init(DivEngine* p, int channels, int sugRate, unsigned int flags) {
+int DivPlatformPCMDAC::init(DivEngine* p, int channels, int sugRate, const DivConfig& flags) {
   parent=p;
   dumpWrites=false;
   skipRegisterWrites=false;

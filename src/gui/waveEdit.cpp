@@ -22,6 +22,7 @@
 #include "plot_nolerp.h"
 #include "IconsFontAwesome4.h"
 #include "misc/cpp/imgui_stdlib.h"
+#include <fmt/printf.h>
 #include <math.h>
 #include <imgui.h>
 
@@ -30,6 +31,13 @@ const char* waveGenBaseShapes[4]={
   "Triangle",
   "Saw",
   "Pulse"
+};
+
+const char* waveInterpolations[4]={
+  "None",
+  "Linear",
+  "Cosine",
+  "Cubic"
 };
 
 const float multFactors[17]={
@@ -152,6 +160,8 @@ void FurnaceGUI::doGenerateWave() {
     if (finalResult[i]>1.0f) finalResult[i]=1.0f;
     wave->data[i]=round(finalResult[i]*wave->max);
   }
+
+  e->notifyWaveChange(curWave);
 }
 
 #define CENTER_TEXT(text) \
@@ -175,7 +185,40 @@ void FurnaceGUI::drawWaveEdit() {
   }
   if (ImGui::Begin("Wavetable Editor",&waveEditOpen,globalWinFlags|(settings.allowEditDocking?0:ImGuiWindowFlags_NoDocking))) {
     if (curWave<0 || curWave>=(int)e->song.wave.size()) {
+      ImGui::SetCursorPosY(ImGui::GetCursorPosY()+(ImGui::GetContentRegionAvail().y-ImGui::GetFrameHeightWithSpacing()*2.0f)*0.5f);
+      CENTER_TEXT("no wavetable selected");
       ImGui::Text("no wavetable selected");
+      if (ImGui::BeginTable("noAssetCenter",3)) {
+        ImGui::TableSetupColumn("c0",ImGuiTableColumnFlags_WidthStretch,0.5f);
+        ImGui::TableSetupColumn("c1",ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("c2",ImGuiTableColumnFlags_WidthStretch,0.5f);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TableNextColumn();
+
+        if (e->song.wave.size()>0) {
+          if (ImGui::BeginCombo("##WaveSelect","select one...")) {
+            actualWaveList();
+            ImGui::EndCombo();
+          }
+          ImGui::SameLine();
+          ImGui::TextUnformatted("or");
+          ImGui::SameLine();
+        }
+        if (ImGui::Button("Open")) {
+          doAction(GUI_ACTION_WAVE_LIST_OPEN);
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("or");
+        ImGui::SameLine();
+        if (ImGui::Button("Create New")) {
+          doAction(GUI_ACTION_WAVE_LIST_ADD);
+        }
+
+        ImGui::TableNextColumn();
+        ImGui::EndTable();
+      }
     } else {
       DivWavetable* wave=e->song.wave[curWave];
 
@@ -220,7 +263,7 @@ void FurnaceGUI::drawWaveEdit() {
         ImGui::TableNextColumn();
         ImGui::Text("Width");
         if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("use a width of:\n- any on Amiga/N163\n- 32 on Game Boy, PC Engine, SCC, Konami Bubble System, Namco WSG and WonderSwan\n- 64 on FDS\n- 128 on X1-010\nany other widths will be scaled during playback.");
+          ImGui::SetTooltip("use a width of:\n- any on Amiga/N163\n- 32 on Game Boy, PC Engine, SCC, Konami Bubble System, Namco WSG, Virtual Boy and WonderSwan\n- 64 on FDS\n- 128 on X1-010\nany other widths will be scaled during playback.");
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(96.0f*dpiScale);
@@ -234,7 +277,7 @@ void FurnaceGUI::drawWaveEdit() {
         ImGui::SameLine();
         ImGui::Text("Height");
         if (ImGui::IsItemHovered()) {
-          ImGui::SetTooltip("use a height of:\n- 15 for Game Boy, WonderSwan, Namco WSG, Konami Bubble System, X1-010 Envelope shape and N163\n- 31 for PC Engine\n- 63 for FDS\n- 255 for X1-010 and SCC\nany other heights will be scaled during playback.");
+          ImGui::SetTooltip("use a height of:\n- 15 for Game Boy, WonderSwan, Namco WSG, Konami Bubble System, X1-010 Envelope shape and N163\n- 31 for PC Engine\n- 63 for FDS and Virtual Boy\n- 255 for X1-010 and SCC\nany other heights will be scaled during playback.");
         }
         ImGui::SameLine();
         ImGui::SetNextItemWidth(96.0f*dpiScale);
@@ -519,13 +562,68 @@ void FurnaceGUI::drawWaveEdit() {
                   if (waveGenScaleX<2) waveGenScaleX=2;
                   if (waveGenScaleX>256) waveGenScaleX=256;
                 }
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                if (CWSliderInt("##WGInterpolation",&waveInterpolation,0,3,waveInterpolations[waveInterpolation])) {
+                  if (waveInterpolation<0) waveInterpolation=0;
+                  if (waveInterpolation>3) waveInterpolation=3;
+                }
                 ImGui::TableNextColumn();
                 if (ImGui::Button("Scale X")) {
                   if (waveGenScaleX>0 && wave->len!=waveGenScaleX) e->lockEngine([this,wave]() {
                     int origData[256];
+                    // Copy original wave to temp buffer
+                    // If longer than 256 samples, return
+                    if (wave->len>256) {
+                      showError("wavetable longer than 256 samples!");
+                      return;
+                    }
                     memcpy(origData,wave->data,wave->len*sizeof(int));
-                    for (int i=0; i<waveGenScaleX; i++) {
-                      wave->data[i]=origData[i*wave->len/waveGenScaleX];
+
+                    float t=0; // Index used into `origData`
+
+                    for (int i=0; i<waveGenScaleX; i++, t+=(float)wave->len/waveGenScaleX) {
+                      switch (waveInterpolation) {
+                        case 0: {
+                          wave->data[i]=origData[i*wave->len/waveGenScaleX];
+                          break;
+                        }
+                        case 1: { // Linear
+                          int idx=t; // Implicitly floors `t`
+                          int s0=origData[(idx)%wave->len];
+                          int s1=origData[(idx+1)%wave->len];
+                          double mu=(t-idx);
+                          wave->data[i]=s0+mu*s1-(mu*s0);
+                          break;
+                        }
+                        case 2: { // Cosine
+                          int idx=t; // Implicitly floors `t`
+                          int s0=origData[(idx)%wave->len];
+                          int s1=origData[(idx+1)%wave->len];
+                          double mu=(t-idx);
+                          double muCos=(1-cos(mu*M_PI))/2;
+                          wave->data[i]=s0+muCos*s1-(muCos*s0);
+                          break;
+                        }
+                        case 3: { // Cubic Spline
+                          int idx=t; // Implicitly floors `t`
+                          int s0=origData[((idx-1%wave->len+wave->len)%wave->len)];
+                          int s1=origData[(idx)%wave->len];
+                          int s2=origData[(idx+1)%wave->len];
+                          int s3=origData[(idx+2)%wave->len];
+                          double mu=(t-idx);
+                          double mu2=mu*mu;
+                          double a0=-0.5*s0+1.5*s1-1.5*s2+0.5*s3;
+                          double a1=s0-2.5*s1+2*s2-0.5*s3;
+                          double a2=-0.5*s0+0.5*s2;
+                          double a3=s1;
+                          wave->data[i]=(a0*mu*mu2+a1*mu2+a2*mu+a3);
+                          break;
+                        }
+                        default: { // No interpolation
+                          wave->data[i]=origData[i*wave->len/waveGenScaleX];
+                          break;
+                        }
+                      }
                     }
                     wave->len=waveGenScaleX;
                     MARK_MODIFIED;

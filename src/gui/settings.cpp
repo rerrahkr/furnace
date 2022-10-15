@@ -270,10 +270,10 @@ void FurnaceGUI::drawSettings() {
           if (ImGui::Button("Current system")) {
             settings.initialSys.clear();
             for (int i=0; i<e->song.systemLen; i++) {
-              settings.initialSys.push_back(e->song.system[i]);
-              settings.initialSys.push_back(e->song.systemVol[i]);
-              settings.initialSys.push_back(e->song.systemPan[i]);
-              settings.initialSys.push_back(e->song.systemFlags[i]);
+              settings.initialSys.set(fmt::sprintf("id%d",i),e->systemToFileFur(e->song.system[i]));
+              settings.initialSys.set(fmt::sprintf("vol%d",i),(int)e->song.systemVol[i]);
+              settings.initialSys.set(fmt::sprintf("pan%d",i),(int)e->song.systemPan[i]);
+              settings.initialSys.set(fmt::sprintf("flags%d",i),e->song.systemFlags[i].toBase64());
             }
             settings.initialSysName=e->song.systemName;
           }
@@ -285,22 +285,24 @@ void FurnaceGUI::drawSettings() {
             for (totalAvailSys=0; availableSystems[totalAvailSys]; totalAvailSys++);
             if (totalAvailSys>0) {
               for (int i=0; i<howMany; i++) {
-                settings.initialSys.push_back(availableSystems[rand()%totalAvailSys]);
-                settings.initialSys.push_back(64);
-                settings.initialSys.push_back(0);
-                settings.initialSys.push_back(0);
+                settings.initialSys.set(fmt::sprintf("id%d",i),e->systemToFileFur((DivSystem)availableSystems[rand()%totalAvailSys]));
+                settings.initialSys.set(fmt::sprintf("vol%d",i),64);
+                settings.initialSys.set(fmt::sprintf("pan%d",i),0);
+                settings.initialSys.set(fmt::sprintf("flags%d",i),"");
               }
             } else {
-              settings.initialSys.push_back(DIV_SYSTEM_DUMMY);
-              settings.initialSys.push_back(64);
-              settings.initialSys.push_back(0);
-              settings.initialSys.push_back(0);
+              settings.initialSys.set("id0",e->systemToFileFur(DIV_SYSTEM_DUMMY));
+              settings.initialSys.set("vol0",64);
+              settings.initialSys.set("pan0",0);
+              settings.initialSys.set("flags0","");
+              howMany=1;
             }
             // randomize system name
             std::vector<String> wordPool[6];
-            for (size_t i=0; i<settings.initialSys.size()/4; i++) {
+            for (int i=0; i<howMany; i++) {
               int wpPos=0;
-              String sName=e->getSystemName((DivSystem)settings.initialSys[i*4]);
+              DivSystem sysID=e->systemFromFileFur(settings.initialSys.getInt(fmt::sprintf("id%d",i),0));
+              String sName=e->getSystemName(sysID);
               String nameWord;
               sName+=" ";
               for (char& i: sName) {
@@ -325,14 +327,14 @@ void FurnaceGUI::drawSettings() {
           ImGui::SameLine();
           if (ImGui::Button("Reset to defaults")) {
             settings.initialSys.clear();
-            settings.initialSys.push_back(DIV_SYSTEM_YM2612);
-            settings.initialSys.push_back(64);
-            settings.initialSys.push_back(0);
-            settings.initialSys.push_back(0);
-            settings.initialSys.push_back(DIV_SYSTEM_SMS);
-            settings.initialSys.push_back(32);
-            settings.initialSys.push_back(0);
-            settings.initialSys.push_back(0);
+            settings.initialSys.set("id0",e->systemToFileFur(DIV_SYSTEM_YM2612));
+            settings.initialSys.set("vol0",64);
+            settings.initialSys.set("pan0",0);
+            settings.initialSys.set("flags0","");
+            settings.initialSys.set("id1",e->systemToFileFur(DIV_SYSTEM_SMS));
+            settings.initialSys.set("vol1",64);
+            settings.initialSys.set("pan1",0);
+            settings.initialSys.set("flags1","");
             settings.initialSysName="Sega Genesis/Mega Drive";
           }
 
@@ -341,18 +343,23 @@ void FurnaceGUI::drawSettings() {
           ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
           ImGui::InputText("##InitSysName",&settings.initialSysName);
 
-          for (size_t i=0; i<settings.initialSys.size(); i+=4) {
-            bool doRemove=false;
-            bool doInvert=settings.initialSys[i+1]&128;
-            signed char vol=settings.initialSys[i+1]&127;
+          for (size_t i=0; settings.initialSys.getInt(fmt::sprintf("id%d",i),0); i++) {
+            DivSystem sysID=e->systemFromFileFur(settings.initialSys.getInt(fmt::sprintf("id%d",i),0));
+            signed char sysVol=settings.initialSys.getInt(fmt::sprintf("vol%d",i),0);
+            signed char sysPan=settings.initialSys.getInt(fmt::sprintf("pan%d",i),0);
+
+            //bool doRemove=false;
+            bool doInvert=sysVol&128;
+            signed char vol=sysVol&127;
             ImGui::PushID(i);
 
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-ImGui::CalcTextSize("Invert").x-ImGui::GetFrameHeightWithSpacing()*2.0-ImGui::GetStyle().ItemSpacing.x);
-            if (ImGui::BeginCombo("##System",getSystemName((DivSystem)settings.initialSys[i]))) {
+            if (ImGui::BeginCombo("##System",getSystemName(sysID))) {
               for (int j=0; availableSystems[j]; j++) {
-                if (ImGui::Selectable(getSystemName((DivSystem)availableSystems[j]),settings.initialSys[i]==availableSystems[j])) {
-                  settings.initialSys[i]=availableSystems[j];
-                  settings.initialSys[i+3]=0;
+                if (ImGui::Selectable(getSystemName((DivSystem)availableSystems[j]),sysID==availableSystems[j])) {
+                  sysID=(DivSystem)availableSystems[j];
+                  settings.initialSys.set(fmt::sprintf("id%d",i),(int)e->systemToFileFur(sysID));
+                  settings.initialSys.set(fmt::sprintf("flags%d",i),"");
                 }
               }
               ImGui::EndCombo();
@@ -360,39 +367,48 @@ void FurnaceGUI::drawSettings() {
 
             ImGui::SameLine();
             if (ImGui::Checkbox("Invert",&doInvert)) {
-              settings.initialSys[i+1]^=128;
+              sysVol^=128;
+              settings.initialSys.set(fmt::sprintf("vol%d",i),(int)sysVol);
             }
             ImGui::SameLine();
-            ImGui::BeginDisabled(settings.initialSys.size()<=4);
+            //ImGui::BeginDisabled(settings.initialSys.size()<=4);
             if (ImGui::Button(ICON_FA_MINUS "##InitSysRemove")) {
-              doRemove=true;
+              //doRemove=true;
             }
-            ImGui::EndDisabled();
+            //ImGui::EndDisabled();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-(50.0f*dpiScale));
             if (CWSliderScalar("Volume",ImGuiDataType_S8,&vol,&_ZERO,&_ONE_HUNDRED_TWENTY_SEVEN)) {
-              settings.initialSys[i+1]=(settings.initialSys[i+1]&128)|vol;
+              sysVol=(sysVol&128)|vol;
+              settings.initialSys.set(fmt::sprintf("vol%d",i),(int)sysVol);
             } rightClickable
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-(50.0f*dpiScale));
-            CWSliderScalar("Panning",ImGuiDataType_S8,&settings.initialSys[i+2],&_MINUS_ONE_HUNDRED_TWENTY_SEVEN,&_ONE_HUNDRED_TWENTY_SEVEN); rightClickable
+            if (CWSliderScalar("Panning",ImGuiDataType_S8,&sysPan,&_MINUS_ONE_HUNDRED_TWENTY_SEVEN,&_ONE_HUNDRED_TWENTY_SEVEN)) {
+              settings.initialSys.set(fmt::sprintf("pan%d",i),(int)sysPan);
+            } rightClickable
 
             // oh please MSVC don't cry
             if (ImGui::TreeNode("Configure")) {
-              drawSysConf(-1,(DivSystem)settings.initialSys[i],(unsigned int&)settings.initialSys[i+3],false);
+              String sysFlagsS=settings.initialSys.getString(fmt::sprintf("flags%d",i),"");
+              DivConfig sysFlags;
+              sysFlags.loadFromBase64(sysFlagsS.c_str());
+              if (drawSysConf(-1,sysID,sysFlags,false)) {
+                settings.initialSys.set(fmt::sprintf("flags%d",i),sysFlags.toBase64());
+              }
               ImGui::TreePop();
             }
 
             ImGui::PopID();
-            if (doRemove && settings.initialSys.size()>=8) {
+            /*if (doRemove && settings.initialSys.size()>=8) {
               settings.initialSys.erase(settings.initialSys.begin()+i,settings.initialSys.begin()+i+4);
               i-=4;
-            }
+            }*/
           }
 
           if (ImGui::Button(ICON_FA_PLUS "##InitSysAdd")) {
-            settings.initialSys.push_back(DIV_SYSTEM_YM2612);
+            /*settings.initialSys.push_back(DIV_SYSTEM_YM2612);
             settings.initialSys.push_back(64);
             settings.initialSys.push_back(0);
-            settings.initialSys.push_back(0);
+            settings.initialSys.push_back(0);*/
           }
 
           ImGui::Separator();
@@ -1427,6 +1443,11 @@ void FurnaceGUI::drawSettings() {
             settings.germanNotation=germanNotationB;
           }
 
+          bool centerPatternB=settings.centerPattern;
+          if (ImGui::Checkbox("Center pattern view",&centerPatternB)) {
+            settings.centerPattern=centerPatternB;
+          }
+
           bool unsignedDetuneB=settings.unsignedDetune;
           if (ImGui::Checkbox("Unsigned FM detune values",&unsignedDetuneB)) {
             settings.unsignedDetune=unsignedDetuneB;
@@ -1659,6 +1680,7 @@ void FurnaceGUI::drawSettings() {
             if (ImGui::TreeNode("Instrument Types")) {
               UI_COLOR_CONFIG(GUI_COLOR_INSTR_FM,"FM (OPN)");
               UI_COLOR_CONFIG(GUI_COLOR_INSTR_STD,"SN76489/Sega PSG");
+              UI_COLOR_CONFIG(GUI_COLOR_INSTR_T6W28,"T6W28");
               UI_COLOR_CONFIG(GUI_COLOR_INSTR_GB,"Game Boy");
               UI_COLOR_CONFIG(GUI_COLOR_INSTR_C64,"C64");
               UI_COLOR_CONFIG(GUI_COLOR_INSTR_AMIGA,"Amiga/Generic Sample");
@@ -1755,6 +1777,17 @@ void FurnaceGUI::drawSettings() {
               UI_COLOR_CONFIG(GUI_COLOR_PATTERN_EFFECT_SYS_SECONDARY,"Secondary specific effect");
               UI_COLOR_CONFIG(GUI_COLOR_PATTERN_EFFECT_MISC,"Miscellaneous");
               UI_COLOR_CONFIG(GUI_COLOR_EE_VALUE,"External command output");
+              ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Sample Editor")) {
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_BG,"Background");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_FG,"Waveform");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_LOOP,"Loop region");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_CENTER,"Center guide");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_GRID,"Grid");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_SEL,"Selection");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_SEL_POINT,"Selection points");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_NEEDLE,"Preview needle");
               ImGui::TreePop();
             }
             if (ImGui::TreeNode("Pattern Manager")) {
@@ -2336,6 +2369,7 @@ void FurnaceGUI::syncSettings() {
   settings.maxRecentFile=e->getConfInt("maxRecentFile",10);
   settings.midiOutClock=e->getConfInt("midiOutClock",0);
   settings.midiOutMode=e->getConfInt("midiOutMode",1);
+  settings.centerPattern=e->getConfInt("centerPattern",0);
 
   clampSetting(settings.mainFontSize,2,96);
   clampSetting(settings.patFontSize,2,96);
@@ -2439,18 +2473,24 @@ void FurnaceGUI::syncSettings() {
   clampSetting(settings.maxRecentFile,0,30);
   clampSetting(settings.midiOutClock,0,1);
   clampSetting(settings.midiOutMode,0,2);
+  clampSetting(settings.centerPattern,0,1);
 
-  settings.initialSys=e->decodeSysDesc(e->getConfString("initialSys",""));
-  if (settings.initialSys.size()<4) {
+  String initialSys2=e->getConfString("initialSys2","");
+  if (initialSys2.empty()) {
+    initialSys2=e->decodeSysDesc(e->getConfString("initialSys",""));
+  }
+  settings.initialSys.clear();
+  settings.initialSys.loadFromBase64(initialSys2.c_str());
+  if (settings.initialSys.getInt("id0",0)==0) {
     settings.initialSys.clear();
-    settings.initialSys.push_back(DIV_SYSTEM_YM2612);
-    settings.initialSys.push_back(64);
-    settings.initialSys.push_back(0);
-    settings.initialSys.push_back(0);
-    settings.initialSys.push_back(DIV_SYSTEM_SMS);
-    settings.initialSys.push_back(32);
-    settings.initialSys.push_back(0);
-    settings.initialSys.push_back(0);
+    settings.initialSys.set("id0",e->systemToFileFur(DIV_SYSTEM_YM2612));
+    settings.initialSys.set("vol0",64);
+    settings.initialSys.set("pan0",0);
+    settings.initialSys.set("flags0","");
+    settings.initialSys.set("id1",e->systemToFileFur(DIV_SYSTEM_SMS));
+    settings.initialSys.set("vol1",64);
+    settings.initialSys.set("pan1",0);
+    settings.initialSys.set("flags1","");
   }
 
   // keybinds
@@ -2564,7 +2604,7 @@ void FurnaceGUI::commitSettings() {
   e->setConf("eventDelay",settings.eventDelay);
   e->setConf("moveWindowTitle",settings.moveWindowTitle);
   e->setConf("hiddenSystems",settings.hiddenSystems);
-  e->setConf("initialSys",e->encodeSysDesc(settings.initialSys));
+  e->setConf("initialSys2",settings.initialSys.toBase64());
   e->setConf("initialSysName",settings.initialSysName);
   e->setConf("horizontalDataView",settings.horizontalDataView);
   e->setConf("noMultiSystem",settings.noMultiSystem);
@@ -2598,6 +2638,7 @@ void FurnaceGUI::commitSettings() {
   e->setConf("maxRecentFile",settings.maxRecentFile);
   e->setConf("midiOutClock",settings.midiOutClock);
   e->setConf("midiOutMode",settings.midiOutMode);
+  e->setConf("centerPattern",settings.centerPattern);
 
   // colors
   for (int i=0; i<GUI_COLOR_MAX; i++) {

@@ -19,6 +19,7 @@
 
 #ifndef _ENGINE_H
 #define _ENGINE_H
+#include "config.h"
 #include "instrument.h"
 #include "song.h"
 #include "dispatch.h"
@@ -46,8 +47,8 @@
 #define BUSY_BEGIN_SOFT softLocked=true; isBusy.lock();
 #define BUSY_END isBusy.unlock(); softLocked=false;
 
-#define DIV_VERSION "dev117"
-#define DIV_ENGINE_VERSION 117
+#define DIV_VERSION "dev121"
+#define DIV_ENGINE_VERSION 121
 // for imports
 #define DIV_VERSION_MOD 0xff01
 #define DIV_VERSION_FC 0xff02
@@ -182,7 +183,7 @@ struct DivDispatchContainer {
   void flush(size_t count);
   void fillBuf(size_t runtotal, size_t offset, size_t size);
   void clear();
-  void init(DivSystem sys, DivEngine* eng, int chanCount, double gotRate, unsigned int flags);
+  void init(DivSystem sys, DivEngine* eng, int chanCount, double gotRate, const DivConfig& flags);
   void quit();
   DivDispatchContainer():
     dispatch(NULL),
@@ -327,6 +328,7 @@ class DivEngine {
   bool lowQuality;
   bool playing;
   bool freelance;
+  bool shallStop;
   bool speedAB;
   bool endOfSong;
   bool consoleMode;
@@ -365,7 +367,7 @@ class DivEngine {
   DivAudioEngines audioEngine;
   DivAudioExportModes exportMode;
   double exportFadeOut;
-  std::map<String,String> conf;
+  DivConfig conf;
   std::deque<DivNoteEvent> pendingNotes;
   // bitfield
   unsigned char walked[8192];
@@ -385,12 +387,14 @@ class DivEngine {
   DivSystem sysFileMapDMF[256];
 
   struct SamplePreview {
+    double rate;
     int sample;
     int wave;
     int pos;
     int pBegin, pEnd;
     bool dir;
     SamplePreview():
+      rate(0.0),
       sample(-1),
       wave(-1),
       pos(0),
@@ -423,10 +427,6 @@ class DivEngine {
   // MIDI stuff
   std::function<int(const TAMidiMessage&)> midiCallback=[](const TAMidiMessage&) -> int {return -2;};
 
-  DivSystem systemFromFileFur(unsigned char val);
-  unsigned char systemToFileFur(DivSystem val);
-  DivSystem systemFromFileDMF(unsigned char val);
-  unsigned char systemToFileDMF(DivSystem val);
   int dispatchCmd(DivCommand c);
   void processRow(int i, bool afterDelay);
   void nextOrder();
@@ -439,6 +439,8 @@ class DivEngine {
   void recalcChans();
   void reset();
   void playSub(bool preserveDrift, int goalRow=0);
+
+  void convertOldFlags(unsigned int oldFlags, DivConfig& newFlags, DivSystem sys);
 
   bool loadDMF(unsigned char* file, size_t len);
   bool loadFur(unsigned char* file, size_t len);
@@ -467,7 +469,7 @@ class DivEngine {
   bool deinitAudioBackend(bool dueToSwitchMaster=false);
 
   void registerSystems();
-  void initSongWithDesc(const int* description);
+  void initSongWithDesc(const char* description);
 
   void exchangeIns(int one, int two);
   void swapChannels(int src, int dest);
@@ -498,11 +500,10 @@ class DivEngine {
     DivWavetable* getWave(int index);
     DivSample* getSample(int index);
     DivDispatch* getDispatch(int index);
-    // parse system setup description
-    String encodeSysDesc(std::vector<int>& desc);
-    std::vector<int> decodeSysDesc(String desc);
+    // parse old system setup description
+    String decodeSysDesc(String desc);
     // start fresh
-    void createNew(const int* description, String sysName);
+    void createNew(const char* description, String sysName);
     // load a file.
     bool load(unsigned char* f, size_t length);
     // save as .dmf.
@@ -529,6 +530,12 @@ class DivEngine {
     void notifyInsChange(int ins);
     // notify wavetable change
     void notifyWaveChange(int wave);
+
+    // get system IDs
+    DivSystem systemFromFileFur(unsigned char val);
+    unsigned char systemToFileFur(DivSystem val);
+    DivSystem systemFromFileDMF(unsigned char val);
+    unsigned char systemToFileDMF(DivSystem val);
 
     // benchmark (returns time in seconds)
     double benchmarkPlayback();
@@ -595,6 +602,11 @@ class DivEngine {
 
     // reset playback state
     void syncReset();
+
+    // sample preview query
+    bool isPreviewingSample();
+    int getSamplePreviewPos();
+    double getSamplePreviewRate();
 
     // trigger sample preview
     void previewSample(int sample, int note=-1, int pStart=-1, int pEnd=-1);
@@ -816,8 +828,8 @@ class DivEngine {
     // go to order
     void setOrder(unsigned char order);
 
-    // set system flags
-    void setSysFlags(int system, unsigned int flags, bool restart);
+    // update system flags
+    void updateSysFlags(int system, bool restart);
 
     // set Hz
     void setSongRate(float hz, bool pal);
@@ -894,6 +906,9 @@ class DivEngine {
     // load sample ROMs
     int loadSampleROMs();
 
+    // get the sample format mask
+    unsigned int getSampleFormatMask();
+
     // UNSAFE render samples - only execute when locked
     void renderSamples();
 
@@ -942,6 +957,9 @@ class DivEngine {
 
     // get warnings
     String getWarnings();
+
+    // get debug info
+    String getPlaybackDebugInfo();
 
     // switch master
     bool switchMaster();
@@ -998,6 +1016,7 @@ class DivEngine {
       lowQuality(false),
       playing(false),
       freelance(false),
+      shallStop(false),
       speedAB(false),
       endOfSong(false),
       consoleMode(false),

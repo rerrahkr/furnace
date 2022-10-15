@@ -68,7 +68,7 @@ class DivPlatformX1_010: public DivDispatch, public vgsound_emu_mem_intf {
         slide(0),
         slidefrac(0) {}
     };
-    int freq, baseFreq, pitch, pitch2, note;
+    int freq, baseFreq, fixedFreq, pitch, pitch2, note;
     int wave, sample, ins;
     unsigned char pan, autoEnvNum, autoEnvDen;
     bool active, insChanged, envChanged, freqChanged, keyOn, keyOff, inPorta, furnacePCM, pcm;
@@ -95,7 +95,7 @@ class DivPlatformX1_010: public DivDispatch, public vgsound_emu_mem_intf {
       pitch2=0;
     }
     Channel():
-      freq(0), baseFreq(0), pitch(0), pitch2(0), note(0),
+      freq(0), baseFreq(0), fixedFreq(0), pitch(0), pitch2(0), note(0),
       wave(-1), sample(-1), ins(-1),
       pan(255), autoEnvNum(0), autoEnvDen(0),
       active(false), insChanged(true), envChanged(true), freqChanged(false), keyOn(false), keyOff(false), inPorta(false), furnacePCM(false), pcm(false),
@@ -138,7 +138,7 @@ class DivPlatformX1_010: public DivDispatch, public vgsound_emu_mem_intf {
     void muteChannel(int ch, bool mute);
     bool isStereo();
     bool keyOffAffectsArp(int ch);
-    void setFlags(unsigned int flags);
+    void setFlags(const DivConfig& flags);
     void notifyWaveChange(int wave);
     void notifyInsDeletion(void* ins);
     void poke(unsigned int addr, unsigned short val);
@@ -149,7 +149,7 @@ class DivPlatformX1_010: public DivDispatch, public vgsound_emu_mem_intf {
     void renderSamples();
     const char** getRegisterSheet();
     void setBanked(bool banked);
-    int init(DivEngine* parent, int channels, int sugRate, unsigned int flags);
+    int init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags);
     void quit();
     DivPlatformX1_010():
       DivDispatch(),

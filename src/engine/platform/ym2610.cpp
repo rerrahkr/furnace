@@ -593,13 +593,14 @@ void DivPlatformYM2610::tick(bool sysTick) {
   ay->tick(sysTick);
   ay->flushWrites();
   for (DivRegWrite& i: ay->getRegisterWrites()) {
+    if (i.addr>15) continue;
     immWrite(i.addr&15,i.val);
   }
   ay->getRegisterWrites().clear();
 }
 
 int DivPlatformYM2610::dispatch(DivCommand c) {
-  if (c.chan>=psgChanOffs && c.chan<7) {
+  if (c.chan>=psgChanOffs && c.chan<adpcmAChanOffs) {
     c.chan-=psgChanOffs;
     return ay->dispatch(c);
   }
@@ -1169,6 +1170,7 @@ void DivPlatformYM2610::forceIns() {
   ay->forceIns();
   ay->flushWrites();
   for (DivRegWrite& i: ay->getRegisterWrites()) {
+    if (i.addr>15) continue;
     immWrite(i.addr&15,i.val);
   }
   ay->getRegisterWrites().clear();
@@ -1276,7 +1278,7 @@ void DivPlatformYM2610::setSkipRegisterWrites(bool value) {
   ay->setSkipRegisterWrites(value);
 }
 
-int DivPlatformYM2610::init(DivEngine* p, int channels, int sugRate, unsigned int flags) {
+int DivPlatformYM2610::init(DivEngine* p, int channels, int sugRate, const DivConfig& flags) {
   DivPlatformYM2610Base::init(p, channels, sugRate, flags);
   reset();
   return 14;

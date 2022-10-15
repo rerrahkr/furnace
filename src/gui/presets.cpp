@@ -271,6 +271,12 @@ void FurnaceGUI::initSystemPresets() {
     }
   ));
   cat.systems.push_back(FurnaceGUISysDef(
+    "Toshiba T6W28", {
+      DIV_SYSTEM_T6W28, 64, 0, 0,
+      0
+    }
+  ));
+  cat.systems.push_back(FurnaceGUISysDef(
     "AY-3-8910", {
       DIV_SYSTEM_AY8910, 64, 0, 0,
       0
@@ -303,6 +309,12 @@ void FurnaceGUI::initSystemPresets() {
   cat.systems.push_back(FurnaceGUISysDef(
     "Commodore VIC", {
       DIV_SYSTEM_VIC20, 64, 0, 1,
+      0
+    }
+  ));
+  cat.systems.push_back(FurnaceGUISysDef(
+    "OKI MSM5232", {
+      DIV_SYSTEM_MSM5232, 64, 0, 0,
       0
     }
   ));
@@ -429,6 +441,12 @@ void FurnaceGUI::initSystemPresets() {
   cat.systems.push_back(FurnaceGUISysDef(
     "WonderSwan", {
       DIV_SYSTEM_SWAN, 64, 0, 0,
+      0
+    }
+  ));
+  cat.systems.push_back(FurnaceGUISysDef(
+    "Virtual Boy", {
+      DIV_SYSTEM_VBOY, 64, 0, 0,
       0
     }
   ));
@@ -695,6 +713,12 @@ void FurnaceGUI::initSystemPresets() {
   cat.systems.push_back(FurnaceGUISysDef(
     "WonderSwan", {
       DIV_SYSTEM_SWAN, 64, 0, 0,
+      0
+    }
+  ));
+  cat.systems.push_back(FurnaceGUISysDef(
+    "Virtual Boy", {
+      DIV_SYSTEM_VBOY, 64, 0, 0,
       0
     }
   ));

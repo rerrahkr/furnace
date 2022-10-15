@@ -33,7 +33,7 @@ class DivPlatformSNES: public DivDispatch {
     int sample, wave, ins;
     int note;
     int panL, panR;
-    bool active, insChanged, freqChanged, keyOn, keyOff, inPorta, useWave, setPos, noise, echo, pitchMod, invertL, invertR;
+    bool active, insChanged, freqChanged, keyOn, keyOff, inPorta, useWave, setPos, noise, echo, pitchMod, invertL, invertR, shallWriteVol, shallWriteEnv;
     int vol, outVol;
     int wtLen;
     DivInstrumentSNES state;
@@ -68,6 +68,8 @@ class DivPlatformSNES: public DivDispatch {
       pitchMod(false),
       invertL(false),
       invertR(false),
+      shallWriteVol(false),
+      shallWriteEnv(false),
       vol(127),
       outVol(127),
       wtLen(16) {} 
@@ -77,11 +79,24 @@ class DivPlatformSNES: public DivDispatch {
   bool isMuted[8];
   int globalVolL, globalVolR;
   unsigned char noiseFreq;
+  signed char delay;
+  signed char echoVolL, echoVolR, echoFeedback;
+  signed char echoFIR[8];
+  unsigned char echoDelay;
   size_t sampleTableBase;
   bool writeControl;
   bool writeNoise;
   bool writePitchMod;
   bool writeEcho;
+  bool echoOn;
+
+  bool initEchoOn;
+  signed char initEchoVolL;
+  signed char initEchoVolR;
+  signed char initEchoFeedback;
+  signed char initEchoFIR[8];
+  unsigned char initEchoDelay;
+  unsigned char initEchoMask;
 
   struct QueuedWrite {
     unsigned char addr;
@@ -91,6 +106,7 @@ class DivPlatformSNES: public DivDispatch {
   std::queue<QueuedWrite> writes;
 
   signed char sampleMem[65536];
+  signed char copyOfSampleMem[65536];
   size_t sampleMemLen;
   unsigned int sampleOff[256];
   unsigned char regPool[0x80];
@@ -112,7 +128,7 @@ class DivPlatformSNES: public DivDispatch {
     bool isStereo();
     void notifyInsChange(int ins);
     void notifyWaveChange(int wave);
-    void setFlags(unsigned int flags);
+    void setFlags(const DivConfig& flags);
     void notifyInsDeletion(void* ins);
     void poke(unsigned int addr, unsigned short val);
     void poke(std::vector<DivRegWrite>& wlist);
@@ -121,11 +137,13 @@ class DivPlatformSNES: public DivDispatch {
     size_t getSampleMemCapacity(int index = 0);
     size_t getSampleMemUsage(int index = 0);
     void renderSamples();
-    int init(DivEngine* parent, int channels, int sugRate, unsigned int flags);
+    int init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags);
     void quit();
   private:
     void updateWave(int ch);
     void writeOutVol(int ch);
+    void writeEnv(int ch);
+    void initEcho();
 };
 
 #endif

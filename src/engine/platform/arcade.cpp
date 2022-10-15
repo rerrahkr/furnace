@@ -248,6 +248,10 @@ void DivPlatformArcade::tick(bool sysTick) {
       immWrite(0x18,chan[i].std.ex3.val);
     }
 
+    if (chan[i].std.ex1.had || chan[i].std.ex2.had || chan[i].std.ex3.had) {
+      immWrite(0x01,0x00); // LFO On
+    }
+
     if (chan[i].std.alg.had) {
       chan[i].state.alg=chan[i].std.alg.val;
       if (isMuted[i]) {
@@ -875,13 +879,8 @@ void DivPlatformArcade::reset() {
   //rWrite(0x1b,0x00);
 }
 
-void DivPlatformArcade::setFlags(unsigned int flags) {
-  switch (flags&0xff) {
-    default:
-    case 0:
-      chipClock=COLOR_NTSC;
-      baseFreqOff=0;
-      break;
+void DivPlatformArcade::setFlags(const DivConfig& flags) {
+  switch (flags.getInt("clockSel",0)) {
     case 1:
       chipClock=COLOR_PAL*4.0/5.0;
       baseFreqOff=12;
@@ -889,6 +888,10 @@ void DivPlatformArcade::setFlags(unsigned int flags) {
     case 2:
       chipClock=4000000.0;
       baseFreqOff=-122;
+      break;
+    default:
+      chipClock=COLOR_NTSC;
+      baseFreqOff=0;
       break;
   }
   rate=chipClock/64;
@@ -905,7 +908,7 @@ void DivPlatformArcade::setYMFM(bool use) {
   useYMFM=use;
 }
 
-int DivPlatformArcade::init(DivEngine* p, int channels, int sugRate, unsigned int flags) {
+int DivPlatformArcade::init(DivEngine* p, int channels, int sugRate, const DivConfig& flags) {
   parent=p;
   dumpWrites=false;
   skipRegisterWrites=false;

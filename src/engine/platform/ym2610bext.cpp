@@ -474,6 +474,7 @@ void DivPlatformYM2610BExt::forceIns() {
   ay->forceIns();
   ay->flushWrites();
   for (DivRegWrite& i: ay->getRegisterWrites()) {
+    if (i.addr>15) continue;
     immWrite(i.addr&15,i.val);
   }
   ay->getRegisterWrites().clear();
@@ -531,7 +532,7 @@ void DivPlatformYM2610BExt::notifyInsChange(int ins) {
   }
 }
 
-int DivPlatformYM2610BExt::init(DivEngine* parent, int channels, int sugRate, unsigned int flags) {
+int DivPlatformYM2610BExt::init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags) {
   DivPlatformYM2610B::init(parent,channels,sugRate,flags);
   for (int i=0; i<4; i++) {
     isOpMuted[i]=false;

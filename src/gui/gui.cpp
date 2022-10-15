@@ -491,6 +491,15 @@ bool FurnaceGUI::CWVSliderInt(const char* label, const ImVec2& size, int* v, int
   return CWVSliderScalar(label,size,ImGuiDataType_S32,v,&v_min,&v_max,format,flags);
 }
 
+bool FurnaceGUI::InvCheckbox(const char* label, bool* value) {
+  bool t=!(*value);
+  if (ImGui::Checkbox(label,&t)) {
+    *value=!t;
+    return true;
+  }
+  return false;
+}
+
 const char* FurnaceGUI::getSystemName(DivSystem which) {
   /*
   if (settings.chipNames) {
@@ -1396,9 +1405,9 @@ void FurnaceGUI::openFileDialog(FurnaceGUIFileDialogs type) {
       if (!dirExists(workingDirSong)) workingDirSong=getHomeDir();
       hasOpened=fileDialog->openLoad(
         "Open File",
-        {"compatible files", "*.fur *.dmf *.mod *.fc13 *.fc14 *.smod",
+        {"compatible files", "*.fur *.dmf *.mod *.fc13 *.fc14 *.smod *.fc",
          "all files", ".*"},
-        "compatible files{.fur,.dmf,.mod,.fc13,.fc14,.smod},.*",
+        "compatible files{.fur,.dmf,.mod,.fc13,.fc14,.smod,.fc},.*",
         workingDirSong,
         dpiScale
       );
@@ -1993,6 +2002,10 @@ void FurnaceGUI::showError(String what) {
   displayError=true;
 }
 
+String FurnaceGUI::getLastError() {
+  return lastError;
+}
+
 // what monster did I just create here?
 #define B30(tt) (macroDragBit30?((((tt)&0xc0000000)==0x40000000 || ((tt)&0xc0000000)==0x80000000)?0x40000000:0):0)
 
@@ -2134,18 +2147,20 @@ void FurnaceGUI::processDrags(int dragX, int dragY) {
     if (x1>=(int)sampleDragLen) x1=sampleDragLen-1;
     double y=0.5-double(dragY-sampleDragStart.y)/sampleDragAreaSize.y;
     if (sampleDragMode) { // draw
-      if (sampleDrag16) {
-        int val=y*65536;
-        if (val<-32768) val=-32768;
-        if (val>32767) val=32767;
-        for (int i=x; i<=x1; i++) ((short*)sampleDragTarget)[i]=val;
-      } else {
-        int val=y*256;
-        if (val<-128) val=-128;
-        if (val>127) val=127;
-        for (int i=x; i<=x1; i++) ((signed char*)sampleDragTarget)[i]=val;
+      if (sampleDragTarget) {
+        if (sampleDrag16) {
+          int val=y*65536;
+          if (val<-32768) val=-32768;
+          if (val>32767) val=32767;
+          for (int i=x; i<=x1; i++) ((short*)sampleDragTarget)[i]=val;
+        } else {
+          int val=y*256;
+          if (val<-128) val=-128;
+          if (val>127) val=127;
+          for (int i=x; i<=x1; i++) ((signed char*)sampleDragTarget)[i]=val;
+        }
+        updateSampleTex=true;
       }
-      updateSampleTex=true;
     } else { // select
       if (sampleSelStart<0) {
         sampleSelStart=x;
@@ -2836,7 +2851,7 @@ void FurnaceGUI::pointDown(int x, int y, int button) {
 }
 
 void FurnaceGUI::pointUp(int x, int y, int button) {
-  if (macroDragActive || macroLoopDragActive || waveDragActive || (sampleDragActive && sampleDragMode)) {
+  if (macroDragActive || macroLoopDragActive || waveDragActive || (sampleDragActive && sampleDragMode && sampleDragTarget)) {
     MARK_MODIFIED;
   }
   if (macroDragActive && macroDragLineMode && !macroDragMouseMoved) {
@@ -3289,6 +3304,11 @@ bool FurnaceGUI::loop() {
           }
           if (recentFile.empty()) {
             ImGui::Text("nothing here yet");
+          } else {
+            ImGui::Separator();
+            if (ImGui::MenuItem("clear history")) {
+              showWarning("Are you sure you want to clear the recent file list?",GUI_WARN_CLEAR_HISTORY);
+            }
           }
           ImGui::EndMenu();
         }
@@ -4628,6 +4648,16 @@ bool FurnaceGUI::loop() {
             ImGui::CloseCurrentPopup();
           }
           break;
+        case GUI_WARN_CLEAR_HISTORY:
+          if (ImGui::Button("Yes")) {
+            recentFile.clear();
+            ImGui::CloseCurrentPopup();
+          }
+          ImGui::SameLine();
+          if (ImGui::Button("No")) {
+            ImGui::CloseCurrentPopup();
+          }
+          break;
         case GUI_WARN_GENERIC:
           if (ImGui::Button("OK")) {
             ImGui::CloseCurrentPopup();
@@ -5000,7 +5030,7 @@ bool FurnaceGUI::init() {
 
   sdlWin=SDL_CreateWindow("Furnace",scrX,scrY,scrW*dpiScale,scrH*dpiScale,SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI|(scrMax?SDL_WINDOW_MAXIMIZED:0)|(fullScreen?SDL_WINDOW_FULLSCREEN_DESKTOP:0));
   if (sdlWin==NULL) {
-    logE("could not open window! %s",SDL_GetError());
+    lastError=fmt::sprintf("could not open window! %s",SDL_GetError());
     return false;
   }
 
@@ -5055,7 +5085,7 @@ bool FurnaceGUI::init() {
   sdlRend=SDL_CreateRenderer(sdlWin,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC|SDL_RENDERER_TARGETTEXTURE);
 
   if (sdlRend==NULL) {
-    logE("could not init renderer! %s",SDL_GetError());
+    lastError=fmt::sprintf("could not init renderer! %s",SDL_GetError());
     return false;
   }
 
@@ -5395,9 +5425,11 @@ FurnaceGUI::FurnaceGUI():
   editOptsVisible(false),
   latchNibble(false),
   nonLatchNibble(false),
+  keepLoopAlive(false),
   curWindow(GUI_WINDOW_NOTHING),
   nextWindow(GUI_WINDOW_NOTHING),
   curWindowLast(GUI_WINDOW_NOTHING),
+  lastPatternWidth(0.0f),
   nextDesc(NULL),
   latchNote(-1),
   latchIns(-2),
@@ -5576,6 +5608,7 @@ FurnaceGUI::FurnaceGUI():
 #endif
   hasACED(false),
   waveGenBaseShape(0),
+  waveInterpolation(0),
   waveGenDuty(0.5f),
   waveGenPower(1),
   waveGenInvertPoint(1.0f),

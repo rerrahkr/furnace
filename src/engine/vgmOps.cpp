@@ -683,6 +683,11 @@ void DivEngine::performVGMWrite(SafeWriter* w, DivSystem sys, DivRegWrite& write
         w->writeC(write.val&0xff);
       }
       break;
+    case DIV_SYSTEM_VBOY:
+      w->writeC(0xc7);
+      w->writeS_BE(baseAddr2S|(write.addr>>2));
+      w->writeC(write.val&0xff);
+      break;
     case DIV_SYSTEM_OPL:
     case DIV_SYSTEM_OPL_DRUMS:
       w->writeC(0x0b|baseAddr1);
@@ -802,6 +807,20 @@ void DivEngine::performVGMWrite(SafeWriter* w, DivSystem sys, DivRegWrite& write
   }
 }
 
+#define CHIP_VOL(_id,_mult) { \
+  double _vol=fabs(song.systemVol[i])*4.0*_mult; \
+  if (_vol<0.0) _vol=0.0; \
+  if (_vol>32767.0) _vol=32767.0; \
+  chipVol.push_back((_id)|(0x80000000)|(((unsigned int)_vol)<<16)); \
+}
+
+#define CHIP_VOL_SECOND(_id,_mult) { \
+  double _vol=fabs(song.systemVol[i])*4.0*_mult; \
+  if (_vol<0.0) _vol=0.0; \
+  if (_vol>32767.0) _vol=32767.0; \
+  chipVol.push_back((_id)|(0x80000100)|(((unsigned int)_vol)<<16)); \
+}
+
 SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool patternHints) {
   if (version<0x150) {
     lastError="VGM version is too low";
@@ -905,6 +924,7 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
   double loopFreq[DIV_MAX_CHANS];
   int loopSample[DIV_MAX_CHANS];
   bool sampleDir[DIV_MAX_CHANS];
+  std::vector<unsigned int> chipVol; 
 
   for (int i=0; i<DIV_MAX_CHANS; i++) {
     loopTimer[i]=0;
@@ -938,8 +958,9 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
       case DIV_SYSTEM_SMS:
         if (!hasSN) {
           hasSN=disCont[i].dispatch->chipClock;
+          CHIP_VOL(0,1.0);
           willExport[i]=true;
-          switch ((song.systemFlags[i]>>2)&3) {
+          switch (song.systemFlags[i].getInt("chipType",0)) {
             case 1: // real SN
               snNoiseConfig=3;
               snNoiseSize=15;
@@ -956,6 +977,7 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
         } else if (!(hasSN&0x40000000)) {
           isSecond[i]=true;
           willExport[i]=true;
+          CHIP_VOL_SECOND(0,1.0);
           hasSN|=0x40000000;
           howManyChips++;
         }
@@ -1054,11 +1076,7 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
             ayConfig=0x03;
             hasClockDivider=true;
           } else {
-            switch ((song.systemFlags[i]>>4)&3) {
-              default:
-              case 0: // AY8910
-                ayConfig=0x00;
-                break;
+            switch (song.systemFlags[i].getInt("chipType",0)) {
               case 1: // YM2149
                 ayConfig=0x10;
                 hasClockDivider=true;
@@ -1071,12 +1089,15 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
               case 3: // AY8914
                 ayConfig=0x04;
                 break;
+              default: // AY8910
+                ayConfig=0x00;
+                break;
             }
           }
-          if (hasClockDivider && ((song.systemFlags[i]>>7)&1)) {
+          if (hasClockDivider && song.systemFlags[i].getBool("halfClock",false)) {
             ayFlags|=0x10;
           }
-          if (hasStereo && ((song.systemFlags[i]>>6)&1)) {
+          if (hasStereo && song.systemFlags[i].getBool("stereo",false)) {
             ayFlags|=0x80;
           }
           willExport[i]=true;
@@ -1218,6 +1239,17 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
           howManyChips++;
         }
         break;
+      case DIV_SYSTEM_VBOY:
+        if (!hasVSU) {
+          hasVSU=disCont[i].dispatch->chipClock;
+          willExport[i]=true;
+        } else if (!(hasVSU&0x40000000)) {
+          isSecond[i]=true;
+          willExport[i]=true;
+          hasVSU|=0x40000000;
+          howManyChips++;
+        }
+        break;
       case DIV_SYSTEM_OPL:
       case DIV_SYSTEM_OPL_DRUMS:
         if (!hasOPL) {
@@ -1304,7 +1336,7 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
         // chips even though the only difference is the output resolution
         // these system types are currently handled by reusing isSecond flag
         // also this system is not dual-able
-        if ((song.systemFlags[i]>>4)==1) {
+        if (song.systemFlags[i].getInt("chipType",0)==1) {
           if (!hasRFC1) {
             hasRFC1=disCont[i].dispatch->chipClock;
             isSecond[i]=true;
@@ -1337,14 +1369,6 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
       disCont[i].dispatch->toggleRegisterDump(true);
     }
   }
-
-  //bool wantsExtraHeader=false;
-  /*for (int i=0; i<song.systemLen; i++) {
-    if (isSecond[i]) {
-      wantsExtraHeader=true;
-      break;
-    }
-  }*/
 
   // write chips and stuff
   w->writeI(hasSN);
@@ -1407,8 +1431,15 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
     w->writeC(0); // OPN
     w->writeC(0); // OPNA
   }
+  if (version>=0x160) {
+    int calcVolume=32.0*(log(song.masterVol)/log(2.0));
+    if (calcVolume<-63) calcVolume=-63;
+    if (calcVolume>192) calcVolume=192;
+    w->writeC(calcVolume&0xff); // volume
+  } else {
+    w->writeC(0); // volume
+  }
   // currently not used but is part of 1.60
-  w->writeC(0); // volume
   w->writeC(0); // reserved
   w->writeC(0); // loop count
   // 1.51
@@ -1492,15 +1523,21 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
     w->writeI(0);
   }
 
-  /* TODO
   unsigned int exHeaderOff=w->tell();
-  if (wantsExtraHeader) {
-    w->writeI(4);
+  if (version>=0x170) {
+    logD("writing extended header...");
+    w->writeI(8);
+    w->writeI(0);
     w->writeI(4);
 
-    // write clocks
-    w->writeC(howManyChips);
-  }*/
+    // write chip volumes
+    logD("writing chip volumes (%ld)...",chipVol.size());
+    w->writeC(chipVol.size());
+    for (unsigned int& i: chipVol) {
+      logV("- %.8x",i);
+      w->writeI(i);
+    }
+  }
 
   unsigned int songOff=w->tell();
 
@@ -2000,10 +2037,10 @@ SafeWriter* DivEngine::saveVGM(bool* sysToExport, bool loop, int version, bool p
   }
   w->seek(0x34,SEEK_SET);
   w->writeI(songOff-0x34);
-  /*if (wantsExtraHeader) {
+  if (version>=0x170) {
     w->seek(0xbc,SEEK_SET);
     w->writeI(exHeaderOff-0xbc);
-  }*/
+  }
 
   remainingLoops=-1;
   playing=false;

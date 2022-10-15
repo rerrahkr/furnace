@@ -70,6 +70,8 @@ enum DivInstrumentType: unsigned short {
   DIV_INS_QSOUND=40,
   DIV_INS_YMZ280B=41,
   DIV_INS_RF5C68=42,
+  DIV_INS_MSM5232=43,
+  DIV_INS_T6W28=44,
   DIV_INS_MAX,
   DIV_INS_NULL
 };
@@ -176,11 +178,13 @@ struct DivInstrumentMacro {
   String name;
   int val[256];
   unsigned int mode;
-  bool open;
+  unsigned char open;
   unsigned char len, delay, speed, loop, rel;
   
   // the following variables are used by the GUI and not saved in the file
   int vScroll, vZoom;
+  int typeMemory[16];
+  unsigned char lenMemory;
 
   explicit DivInstrumentMacro(const String& n, bool initOpen=false):
     name(n),
@@ -192,8 +196,10 @@ struct DivInstrumentMacro {
     loop(255),
     rel(255),
     vScroll(0),
-    vZoom(-1) {
+    vZoom(-1),
+    lenMemory(0) {
     memset(val,0,256*sizeof(int));
+    memset(typeMemory,0,16*sizeof(int));
   }
 };
 
@@ -527,12 +533,13 @@ struct DivInstrumentSNES {
     GAIN_MODE_INC_LINEAR=6,
     GAIN_MODE_INC_INVLOG=7
   };
-  bool useEnv;
+  bool useEnv, sus;
   GainMode gainMode;
   unsigned char gain;
   unsigned char a, d, s, r;
   DivInstrumentSNES():
     useEnv(true),
+    sus(false),
     gainMode(GAIN_MODE_DIRECT),
     gain(127),
     a(15),

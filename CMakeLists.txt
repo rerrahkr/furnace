@@ -434,8 +434,13 @@ src/engine/platform/sound/vic20sound.c
 
 src/engine/platform/sound/ymz280b.cpp
 
+src/engine/platform/sound/vsu.cpp
+
+src/engine/platform/sound/t6w28/T6W28_Apu.cpp
+
 src/engine/platform/sound/rf5c68.cpp
 
+src/engine/platform/sound/oki/msm5232.cpp
 src/engine/platform/sound/oki/okim6258.cpp
 
 src/engine/platform/sound/snes/SPC_DSP.cpp
@@ -449,6 +454,7 @@ src/engine/brrUtils.c
 src/engine/safeReader.cpp
 src/engine/safeWriter.cpp
 src/engine/config.cpp
+src/engine/configEngine.cpp
 src/engine/dispatchContainer.cpp
 src/engine/engine.cpp
 src/engine/fileOps.cpp
@@ -493,6 +499,7 @@ src/engine/platform/fds.cpp
 src/engine/platform/tia.cpp
 src/engine/platform/saa.cpp
 src/engine/platform/amiga.cpp
+src/engine/platform/msm5232.cpp
 src/engine/platform/msm6258.cpp
 src/engine/platform/msm6295.cpp
 src/engine/platform/pcspkr.cpp
@@ -502,6 +509,8 @@ src/engine/platform/x1_010.cpp
 src/engine/platform/lynx.cpp
 src/engine/platform/su.cpp
 src/engine/platform/swan.cpp
+src/engine/platform/t6w28.cpp
+src/engine/platform/vb.cpp
 src/engine/platform/vera.cpp
 src/engine/platform/zxbeeper.cpp
 src/engine/platform/bubsyswsg.cpp

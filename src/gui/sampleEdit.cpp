@@ -28,6 +28,9 @@
 #include "sampleUtil.h"
 #include "util.h"
 
+#define CENTER_TEXT(text) \
+  ImGui::SetCursorPosX(ImGui::GetCursorPosX()+0.5*(ImGui::GetContentRegionAvail().x-ImGui::CalcTextSize(text).x));
+
 void FurnaceGUI::drawSampleEdit() {
   if (nextWindow==GUI_WINDOW_SAMPLE_EDIT) {
     sampleEditOpen=true;
@@ -43,7 +46,40 @@ void FurnaceGUI::drawSampleEdit() {
   }
   if (ImGui::Begin("Sample Editor",&sampleEditOpen,globalWinFlags|(settings.allowEditDocking?0:ImGuiWindowFlags_NoDocking))) {
     if (curSample<0 || curSample>=(int)e->song.sample.size()) {
+      ImGui::SetCursorPosY(ImGui::GetCursorPosY()+(ImGui::GetContentRegionAvail().y-ImGui::GetFrameHeightWithSpacing()*2.0f)*0.5f);
+      CENTER_TEXT("no sample selected");
       ImGui::Text("no sample selected");
+      if (ImGui::BeginTable("noAssetCenter",3)) {
+        ImGui::TableSetupColumn("c0",ImGuiTableColumnFlags_WidthStretch,0.5f);
+        ImGui::TableSetupColumn("c1",ImGuiTableColumnFlags_WidthFixed);
+        ImGui::TableSetupColumn("c2",ImGuiTableColumnFlags_WidthStretch,0.5f);
+
+        ImGui::TableNextRow();
+        ImGui::TableNextColumn();
+        ImGui::TableNextColumn();
+
+        if (e->song.sample.size()>0) {
+          if (ImGui::BeginCombo("##SampleSelect","select one...")) {
+            actualSampleList();
+            ImGui::EndCombo();
+          }
+          ImGui::SameLine();
+          ImGui::TextUnformatted("or");
+          ImGui::SameLine();
+        }
+        if (ImGui::Button("Open")) {
+          doAction(GUI_ACTION_SAMPLE_LIST_OPEN);
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted("or");
+        ImGui::SameLine();
+        if (ImGui::Button("Create New")) {
+          doAction(GUI_ACTION_SAMPLE_LIST_ADD);
+        }
+
+        ImGui::TableNextColumn();
+        ImGui::EndTable();
+      }
     } else {
       DivSample* sample=e->song.sample[curSample];
       String sampleType="Invalid";
@@ -120,8 +156,15 @@ void FurnaceGUI::drawSampleEdit() {
               sample->loopEnd=sample->samples;
             }
             updateSampleTex=true;
+            if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+              e->renderSamplesP();
+            }
           }
-          if (doLoop) {
+          if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+            ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
+          }
+          if (doLoop || keepLoopAlive) {
+            keepLoopAlive=false;
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::Text("Loop Mode");
@@ -144,7 +187,7 @@ void FurnaceGUI::drawSampleEdit() {
             ImGui::Text("Loop Start");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputInt("##LoopStartPosition",&sample->loopStart,1,10)) { MARK_MODIFIED
+            if (ImGui::InputInt("##LoopStartPosition",&sample->loopStart,1,16)) { MARK_MODIFIED
               if (sample->loopStart<0) {
                 sample->loopStart=0;
               }
@@ -152,12 +195,21 @@ void FurnaceGUI::drawSampleEdit() {
                 sample->loopStart=sample->loopEnd;
               }
               updateSampleTex=true;
+              if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+                e->renderSamplesP();
+              }
+            }
+            if (ImGui::IsItemActive()) {
+              keepLoopAlive=true;
+            }
+            if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+              ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
             }
             ImGui::TableNextColumn();
             ImGui::Text("Loop End");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputInt("##LoopEndPosition",&sample->loopEnd,1,10)) { MARK_MODIFIED
+            if (ImGui::InputInt("##LoopEndPosition",&sample->loopEnd,1,16)) { MARK_MODIFIED
               if (sample->loopEnd<sample->loopStart) {
                 sample->loopEnd=sample->loopStart;
               }
@@ -165,6 +217,15 @@ void FurnaceGUI::drawSampleEdit() {
                 sample->loopEnd=sample->samples;
               }
               updateSampleTex=true;
+              if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+                e->renderSamplesP();
+              }
+            }
+            if (ImGui::IsItemActive()) {
+              keepLoopAlive=true;
+            }
+            if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+              ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
             }
           }
           ImGui::EndTable();
@@ -177,8 +238,6 @@ void FurnaceGUI::drawSampleEdit() {
         ImGui::SameLine();
         */
         ImGui::Separator();
-
-        ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
 
         pushToggleColors(!sampleDragMode);
         if (ImGui::Button(ICON_FA_I_CURSOR "##SSelect")) {
@@ -197,6 +256,7 @@ void FurnaceGUI::drawSampleEdit() {
         if (ImGui::IsItemHovered()) {
           ImGui::SetTooltip("Edit mode: Draw");
         }
+        ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
         ImGui::SameLine();
         ImGui::Dummy(ImVec2(4.0*dpiScale,dpiScale));
         ImGui::SameLine();
@@ -564,6 +624,7 @@ void FurnaceGUI::drawSampleEdit() {
           }
           ImGui::EndPopup();
         }
+        ImGui::EndDisabled();
         ImGui::SameLine();
         ImGui::Dummy(ImVec2(4.0*dpiScale,dpiScale));
         ImGui::SameLine();
@@ -677,8 +738,15 @@ void FurnaceGUI::drawSampleEdit() {
               sample->loopEnd=sample->samples;
             }
             updateSampleTex=true;
+            if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+              e->renderSamplesP();
+            }
           }
-          if (doLoop) {
+          if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+            ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
+          }
+          if (doLoop || keepLoopAlive) {
+            keepLoopAlive=false;
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
             ImGui::Text("Loop Mode");
@@ -702,27 +770,45 @@ void FurnaceGUI::drawSampleEdit() {
             ImGui::Text("Loop Start");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputInt("##LoopStartPosition",&sample->loopStart,1,10)) { MARK_MODIFIED
+            if (ImGui::InputInt("##LoopStartPosition",&sample->loopStart,1,16)) { MARK_MODIFIED
               if (sample->loopStart<0) {
                 sample->loopStart=0;
               }
               if (sample->loopStart>sample->loopEnd) {
                 sample->loopStart=sample->loopEnd;
               }
+              if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+                e->renderSamplesP();
+              }
               updateSampleTex=true;
+            }
+            if (ImGui::IsItemActive()) {
+              keepLoopAlive=true;
+            }
+            if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+              ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
             }
             ImGui::TableNextColumn();
             ImGui::Text("Loop End");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-            if (ImGui::InputInt("##LoopEndPosition",&sample->loopEnd,1,10)) { MARK_MODIFIED
+            if (ImGui::InputInt("##LoopEndPosition",&sample->loopEnd,1,16)) { MARK_MODIFIED
               if (sample->loopEnd<sample->loopStart) {
                 sample->loopEnd=sample->loopStart;
               }
               if (sample->loopEnd>=(int)sample->samples) {
                 sample->loopEnd=sample->samples;
               }
+              if (e->getSampleFormatMask()&(1U<<DIV_SAMPLE_DEPTH_BRR)) {
+                e->renderSamplesP();
+              }
               updateSampleTex=true;
+            }
+            if (ImGui::IsItemActive()) {
+              keepLoopAlive=true;
+            }
+            if (ImGui::IsItemHovered() && sample->depth==DIV_SAMPLE_DEPTH_BRR) {
+              ImGui::SetTooltip("changing the loop in a BRR sample may result in glitches!");
             }
           }
           ImGui::EndTable();
@@ -735,8 +821,6 @@ void FurnaceGUI::drawSampleEdit() {
         ImGui::SameLine();
         */
         ImGui::Separator();
-
-        ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
 
         pushToggleColors(!sampleDragMode);
         if (ImGui::Button(ICON_FA_I_CURSOR "##SSelect")) {
@@ -755,6 +839,7 @@ void FurnaceGUI::drawSampleEdit() {
         if (ImGui::IsItemHovered()) {
           ImGui::SetTooltip("Edit mode: Draw");
         }
+        ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
         ImGui::SameLine();
         ImGui::Dummy(ImVec2(7.0*dpiScale,dpiScale));
         ImGui::SameLine();
@@ -1129,6 +1214,8 @@ void FurnaceGUI::drawSampleEdit() {
           ImGui::SetTooltip("Trim");
         }
 
+        ImGui::EndDisabled();
+
         if (ImGui::Button(ICON_FA_PLAY "##PreviewSample")) {
           e->previewSample(curSample);
         }
@@ -1230,10 +1317,10 @@ void FurnaceGUI::drawSampleEdit() {
           if (SDL_LockTexture(sampleTex,NULL,(void**)&data,&pitch)!=0) {
             logE("error while locking sample texture! %s",SDL_GetError());
           } else {
-            ImU32 bgColor=ImGui::GetColorU32(ImGuiCol_FrameBg);
-            ImU32 bgColorLoop=ImAlphaBlendColors(bgColor,ImGui::GetColorU32(ImGuiCol_FrameBgHovered,0.5));
-            ImU32 lineColor=ImGui::GetColorU32(ImGuiCol_PlotLines);
-            ImU32 centerLineColor=ImAlphaBlendColors(bgColor,ImGui::GetColorU32(ImGuiCol_PlotLines,0.25));
+            ImU32 bgColor=ImGui::GetColorU32(uiColors[GUI_COLOR_SAMPLE_BG]);
+            ImU32 bgColorLoop=ImGui::GetColorU32(uiColors[GUI_COLOR_SAMPLE_LOOP]);
+            ImU32 lineColor=ImGui::GetColorU32(uiColors[GUI_COLOR_SAMPLE_FG]);
+            ImU32 centerLineColor=ImGui::GetColorU32(uiColors[GUI_COLOR_SAMPLE_CENTER]);
             for (int i=0; i<availY; i++) {
               for (int j=0; j<availX; j++) {
                 int scaledPos=samplePos+(j*sampleZoom);
@@ -1308,11 +1395,23 @@ void FurnaceGUI::drawSampleEdit() {
             sampleSelStart=0;
             sampleSelEnd=sample->samples;
           } else {
-            if (sample->samples>0 && (sample->depth==DIV_SAMPLE_DEPTH_16BIT || sample->depth==DIV_SAMPLE_DEPTH_8BIT)) {
+            if (sample->samples>0) {
               sampleDragStart=rectMin;
               sampleDragAreaSize=rectSize;
-              sampleDrag16=(sample->depth==DIV_SAMPLE_DEPTH_16BIT);
-              sampleDragTarget=(sample->depth==DIV_SAMPLE_DEPTH_16BIT)?((void*)sample->data16):((void*)sample->data8);
+              switch (sample->depth) {
+                case DIV_SAMPLE_DEPTH_8BIT:
+                  sampleDrag16=false;
+                  sampleDragTarget=(void*)sample->data8;
+                  break;
+                case DIV_SAMPLE_DEPTH_16BIT:
+                  sampleDrag16=true;
+                  sampleDragTarget=(void*)sample->data16;
+                  break;
+                default:
+                  sampleDrag16=true;
+                  sampleDragTarget=NULL;
+                  break;
+              }
               sampleDragLen=sample->samples;
               sampleDragActive=true;
               sampleSelStart=-1;
@@ -1328,12 +1427,15 @@ void FurnaceGUI::drawSampleEdit() {
         }
 
         if (ImGui::BeginPopup("SRightClick",ImGuiWindowFlags_NoTitleBar|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_AlwaysAutoResize)) {
+          ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
           if (ImGui::MenuItem("cut",BIND_FOR(GUI_ACTION_SAMPLE_CUT))) {
             doAction(GUI_ACTION_SAMPLE_CUT);
           }
+          ImGui::EndDisabled();
           if (ImGui::MenuItem("copy",BIND_FOR(GUI_ACTION_SAMPLE_COPY))) {
             doAction(GUI_ACTION_SAMPLE_COPY);
           }
+          ImGui::BeginDisabled(sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT);
           if (ImGui::MenuItem("paste",BIND_FOR(GUI_ACTION_SAMPLE_PASTE))) {
             doAction(GUI_ACTION_SAMPLE_PASTE);
           }
@@ -1343,6 +1445,7 @@ void FurnaceGUI::drawSampleEdit() {
           if (ImGui::MenuItem("paste (mix)",BIND_FOR(GUI_ACTION_SAMPLE_PASTE_MIX))) {
             doAction(GUI_ACTION_SAMPLE_PASTE_MIX);
           }
+          ImGui::EndDisabled();
           if (ImGui::MenuItem("select all",BIND_FOR(GUI_ACTION_SAMPLE_SELECT_ALL))) {
             doAction(GUI_ACTION_SAMPLE_SELECT_ALL);
           }
@@ -1368,7 +1471,11 @@ void FurnaceGUI::drawSampleEdit() {
               end^=start;
               start^=end;
             }
-            statusBar+=fmt::sprintf(" (%d-%d)",start,end);
+            if (start==end) {
+              statusBar+=fmt::sprintf(" (%d)",start);
+            } else {
+              statusBar+=fmt::sprintf(" (%d-%d: %d samples)",start,end,end-start);
+            }
             drawSelection=true;
           }
         }
@@ -1420,6 +1527,43 @@ void FurnaceGUI::drawSampleEdit() {
           }
         }
 
+        if (e->isPreviewingSample()) {
+          statusBar+=fmt::sprintf(" | %.2fHz",e->getSamplePreviewRate());
+
+          int start=sampleSelStart;
+          int end=sampleSelEnd;
+          if (start>end) {
+            start^=end;
+            end^=start;
+            start^=end;
+          }
+          ImDrawList* dl=ImGui::GetWindowDrawList();
+          ImVec2 p1=rectMin;
+          p1.x+=(e->getSamplePreviewPos()-samplePos)/sampleZoom;     
+          ImVec4 posColor=uiColors[GUI_COLOR_SAMPLE_NEEDLE];
+          ImVec4 posTrail1=posColor;
+          ImVec4 posTrail2=posColor;
+          posTrail1.w*=0.5f;
+          posTrail2.w=0.0f;
+          float trailDistance=(e->getSamplePreviewRate()/100.0f)/sampleZoom;
+
+          if (p1.x<rectMin.x) p1.x=rectMin.x;
+          if (p1.x>rectMax.x) p1.x=rectMax.x;
+
+          ImVec2 p2=p1;
+          p2.y=rectMax.y;
+
+          dl->AddRectFilledMultiColor(
+            ImVec2(p1.x-trailDistance,p1.y),
+            p2,
+            ImGui::GetColorU32(posTrail2),
+            ImGui::GetColorU32(posTrail1),
+            ImGui::GetColorU32(posTrail1),
+            ImGui::GetColorU32(posTrail2)
+          );
+          dl->AddLine(p1,p2,ImGui::GetColorU32(posColor));
+        }
+
         if (drawSelection) {
           int start=sampleSelStart;
           int end=sampleSelEnd;
@@ -1433,10 +1577,8 @@ void FurnaceGUI::drawSampleEdit() {
           p1.x+=(start-samplePos)/sampleZoom;
 
           ImVec2 p2=ImVec2(rectMin.x+(end-samplePos)/sampleZoom,rectMax.y);
-          ImVec4 boundColor=uiColors[GUI_COLOR_ACCENT_PRIMARY];
-          ImVec4 selColor=uiColors[GUI_COLOR_ACCENT_SECONDARY];
-          boundColor.w*=0.5;
-          selColor.w*=0.25;
+          ImVec4 boundColor=uiColors[GUI_COLOR_SAMPLE_SEL_POINT];
+          ImVec4 selColor=uiColors[GUI_COLOR_SAMPLE_SEL];
 
           if (p1.x<rectMin.x) p1.x=rectMin.x;
           if (p1.x>rectMax.x) p1.x=rectMax.x;
@@ -1464,11 +1606,9 @@ void FurnaceGUI::drawSampleEdit() {
           }
         }
 
-        if (sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT) {
+        if (sample->depth!=DIV_SAMPLE_DEPTH_8BIT && sample->depth!=DIV_SAMPLE_DEPTH_16BIT && sampleDragMode) {
           statusBar="Non-8/16-bit samples cannot be edited without prior conversion.";
         }
-
-        ImGui::EndDisabled();
         
         ImGui::SetCursorPosY(ImGui::GetCursorPosY()+ImGui::GetStyle().ScrollbarSize);
         ImGui::Text("%s",statusBar.c_str());

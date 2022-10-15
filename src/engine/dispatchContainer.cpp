@@ -21,6 +21,7 @@
 #include "engine.h"
 #include "platform/genesis.h"
 #include "platform/genesisext.h"
+#include "platform/msm5232.h"
 #include "platform/msm6258.h"
 #include "platform/msm6295.h"
 #include "platform/namcowsg.h"
@@ -31,6 +32,7 @@
 #include "platform/nes.h"
 #include "platform/c64.h"
 #include "platform/arcade.h"
+#include "platform/t6w28.h"
 #include "platform/tx81z.h"
 #include "platform/ym2203.h"
 #include "platform/ym2203ext.h"
@@ -66,6 +68,7 @@
 #include "platform/ymz280b.h"
 #include "platform/rf5c68.h"
 #include "platform/snes.h"
+#include "platform/vb.h"
 #include "platform/pcmdac.h"
 #include "platform/dummy.h"
 #include "../ta-log.h"
@@ -159,7 +162,7 @@ void DivDispatchContainer::clear() {
   prevSample[1]=temp[1];*/
 }
 
-void DivDispatchContainer::init(DivSystem sys, DivEngine* eng, int chanCount, double gotRate, unsigned int flags) {
+void DivDispatchContainer::init(DivSystem sys, DivEngine* eng, int chanCount, double gotRate, const DivConfig& flags) {
   if (dispatch!=NULL) return;
 
   bb[0]=blip_new(32768);
@@ -343,6 +346,12 @@ void DivDispatchContainer::init(DivSystem sys, DivEngine* eng, int chanCount, do
     case DIV_SYSTEM_SWAN:
       dispatch=new DivPlatformSwan;
       break;
+    case DIV_SYSTEM_T6W28:
+      dispatch=new DivPlatformT6W28;
+      break;
+    case DIV_SYSTEM_VBOY:
+      dispatch=new DivPlatformVB;
+      break;
     case DIV_SYSTEM_VERA:
       dispatch=new DivPlatformVERA;
       break;
@@ -387,6 +396,9 @@ void DivDispatchContainer::init(DivSystem sys, DivEngine* eng, int chanCount, do
       break;
     case DIV_SYSTEM_MSM6295:
       dispatch=new DivPlatformMSM6295;
+      break;
+    case DIV_SYSTEM_MSM5232:
+      dispatch=new DivPlatformMSM5232;
       break;
     case DIV_SYSTEM_NAMCO:
       dispatch=new DivPlatformNamcoWSG;
