@@ -1043,6 +1043,8 @@ void DivEngine::runExportThread() {
         curOrder=0;
         prevOrder=0;
         curFadeOutSample=0;
+        lastLoopPos=-1;
+        totalLoops=0;
         isFadingOut=false;
         if (exportFadeOut<=0.01) {
           remainingLoops=loopCount;
@@ -1314,7 +1316,7 @@ void DivEngine::renderSamples() {
   // step 2: render samples to dispatch
   for (int i=0; i<song.systemLen; i++) {
     if (disCont[i].dispatch!=NULL) {
-      disCont[i].dispatch->renderSamples();
+      disCont[i].dispatch->renderSamples(i);
     }
   }
 }
@@ -1389,10 +1391,14 @@ String DivEngine::decodeSysDesc(String desc) {
   return newDesc.toBase64();
 }
 
-void DivEngine::initSongWithDesc(const char* description) {
+void DivEngine::initSongWithDesc(const char* description, bool inBase64) {
   int chanCount=0;
   DivConfig c;
-  c.loadFromBase64(description);
+  if (inBase64) {
+    c.loadFromBase64(description);
+  } else {
+    c.loadFromMemory(description);
+  }
   int index=0;
   for (; index<32; index++) {
     song.system[index]=systemFromFileFur(c.getInt(fmt::sprintf("id%d",index),0));
@@ -1411,9 +1417,15 @@ void DivEngine::initSongWithDesc(const char* description) {
     song.systemFlags[index].loadFromBase64(flags.c_str());
   }
   song.systemLen=index;
+  
+  // extra attributes
+  song.subsong[0]->hz=c.getDouble("tickRate",60.0);
+  if (song.subsong[0]->hz!=60.0) {
+    song.subsong[0]->customTempo=true;
+  }
 }
 
-void DivEngine::createNew(const char* description, String sysName) {
+void DivEngine::createNew(const char* description, String sysName, bool inBase64) {
   quitDispatch();
   BUSY_BEGIN;
   saveLock.lock();
@@ -1421,7 +1433,7 @@ void DivEngine::createNew(const char* description, String sysName) {
   song=DivSong();
   changeSong(0);
   if (description!=NULL) {
-    initSongWithDesc(description);
+    initSongWithDesc(description,inBase64);
   }
   if (sysName=="") {
     song.systemName=getSongSystemLegacyName(song,!getConfInt("noMultiSystem",0));
@@ -1985,10 +1997,14 @@ void DivEngine::getCommandStream(std::vector<DivCommand>& where) {
 }
 
 void DivEngine::playSub(bool preserveDrift, int goalRow) {
+  logV("playSub() called");
   std::chrono::high_resolution_clock::time_point timeStart=std::chrono::high_resolution_clock::now();
   for (int i=0; i<song.systemLen; i++) disCont[i].dispatch->setSkipRegisterWrites(false);
   reset();
-  if (preserveDrift && curOrder==0) return;
+  if (preserveDrift && curOrder==0) {
+    logV("preserveDrift && curOrder is true");
+    return;
+  }
   bool oldRepeatPattern=repeatPattern;
   repeatPattern=false;
   int goal=curOrder;
@@ -2001,9 +2017,7 @@ void DivEngine::playSub(bool preserveDrift, int goalRow) {
   prevDrift=clockDrift;
   clockDrift=0;
   cycles=0;
-  if (preserveDrift) {
-    endOfSong=false;
-  } else {
+  if (!preserveDrift) {
     ticks=1;
     tempoAccum=0;
     totalTicks=0;
@@ -2012,6 +2026,7 @@ void DivEngine::playSub(bool preserveDrift, int goalRow) {
     totalLoops=0;
     lastLoopPos=-1;
   }
+  endOfSong=false;
   speedAB=false;
   playing=true;
   skipping=true;
@@ -2354,6 +2369,10 @@ void DivEngine::reset() {
   speed2=curSubSong->speed2;
   firstTick=false;
   shallStop=false;
+  shallStopSched=false;
+  pendingMetroTick=0;
+  elapsedBars=0;
+  elapsedBeats=0;
   nextSpeed=speed1;
   divider=60;
   if (curSubSong->customTempo) {
@@ -2432,6 +2451,29 @@ int DivEngine::getEffectiveSampleRate(int rate) {
 
 void DivEngine::previewSample(int sample, int note, int pStart, int pEnd) {
   BUSY_BEGIN;
+  previewSampleNoLock(sample,note,pStart,pEnd);
+  BUSY_END;
+}
+
+void DivEngine::stopSamplePreview() {
+  BUSY_BEGIN;
+  stopSamplePreviewNoLock();
+  BUSY_END;
+}
+
+void DivEngine::previewWave(int wave, int note) {
+  BUSY_BEGIN;
+  previewWaveNoLock(wave,note);
+  BUSY_END;
+}
+
+void DivEngine::stopWavePreview() {
+  BUSY_BEGIN;
+  stopWavePreviewNoLock();
+  BUSY_END;
+}
+
+void DivEngine::previewSampleNoLock(int sample, int note, int pStart, int pEnd) {
   sPreview.pBegin=pStart;
   sPreview.pEnd=pEnd;
   sPreview.dir=false;
@@ -2439,14 +2481,13 @@ void DivEngine::previewSample(int sample, int note, int pStart, int pEnd) {
     sPreview.sample=-1;
     sPreview.pos=0;
     sPreview.dir=false;
-    BUSY_END;
     return;
   }
   blip_clear(samp_bb);
-  double rate=song.sample[sample]->rate;
+  double rate=song.sample[sample]->centerRate;
   if (note>=0) {
     rate=(pow(2.0,(double)(note)/12.0)*((double)song.sample[sample]->centerRate)*0.0625);
-    if (rate<=0) rate=song.sample[sample]->rate;
+    if (rate<=0) rate=song.sample[sample]->centerRate;
   }
   if (rate<100) rate=100;
   blip_set_rates(samp_bb,rate,got.rate);
@@ -2456,28 +2497,22 @@ void DivEngine::previewSample(int sample, int note, int pStart, int pEnd) {
   sPreview.sample=sample;
   sPreview.wave=-1;
   sPreview.dir=false;
-  BUSY_END;
 }
 
-void DivEngine::stopSamplePreview() {
-  BUSY_BEGIN;
+void DivEngine::stopSamplePreviewNoLock() {
   sPreview.sample=-1;
   sPreview.pos=0;
   sPreview.dir=false;
-  BUSY_END;
 }
 
-void DivEngine::previewWave(int wave, int note) {
-  BUSY_BEGIN;
+void DivEngine::previewWaveNoLock(int wave, int note) {
   if (wave<0 || wave>=(int)song.wave.size()) {
     sPreview.wave=-1;
     sPreview.pos=0;
     sPreview.dir=false;
-    BUSY_END;
     return;
   }
   if (song.wave[wave]->len<=0) {
-    BUSY_END;
     return;
   }
   blip_clear(samp_bb);
@@ -2490,15 +2525,12 @@ void DivEngine::previewWave(int wave, int note) {
   sPreview.sample=-1;
   sPreview.wave=wave;
   sPreview.dir=false;
-  BUSY_END;
 }
 
-void DivEngine::stopWavePreview() {
-  BUSY_BEGIN;
+void DivEngine::stopWavePreviewNoLock() {
   sPreview.wave=-1;
   sPreview.pos=0;
   sPreview.dir=false;
-  BUSY_END;
 }
 
 bool DivEngine::isPreviewingSample() {
@@ -2527,6 +2559,14 @@ unsigned char DivEngine::getOrder() {
 
 int DivEngine::getRow() {
   return prevRow;
+}
+
+int DivEngine::getElapsedBars() {
+  return elapsedBars;
+}
+
+int DivEngine::getElapsedBeats() {
+  return elapsedBeats;
 }
 
 size_t DivEngine::getCurrentSubSong() {
@@ -2654,12 +2694,17 @@ void DivEngine::unmuteAll() {
   BUSY_END;
 }
 
-int DivEngine::addInstrument(int refChan) {
+int DivEngine::addInstrument(int refChan, DivInstrumentType fallbackType) {
   if (song.ins.size()>=256) return -1;
   BUSY_BEGIN;
   DivInstrument* ins=new DivInstrument;
   int insCount=(int)song.ins.size();
-  DivInstrumentType prefType=getPreferInsType(refChan);
+  DivInstrumentType prefType;
+  if (refChan<0) {
+    prefType=fallbackType;
+  } else {
+    prefType=getPreferInsType(refChan);
+  }
   switch (prefType) {
     case DIV_INS_OPLL:
       *ins=song.nullInsOPLL;
@@ -2673,8 +2718,10 @@ int DivEngine::addInstrument(int refChan) {
     default:
       break;
   }
-  if (sysOfChan[refChan]==DIV_SYSTEM_QSOUND) {
-    *ins=song.nullInsQSound;
+  if (refChan>=0) {
+    if (sysOfChan[refChan]==DIV_SYSTEM_QSOUND) {
+      *ins=song.nullInsQSound;
+    }
   }
   ins->name=fmt::sprintf("Instrument %d",insCount);
   if (prefType!=DIV_INS_NULL) {
@@ -3063,8 +3110,20 @@ DivSample* DivEngine::sampleFromFile(const char* path) {
       if (extS==".brr") {
         dataBuf=sample->dataBRR;
         if ((len%9)==2) {
-          // ignore loop position
-          fseek(f,2,SEEK_SET);
+          // read loop position
+          unsigned short loopPos=0;
+          logD("BRR file has loop position");
+          if (fread(&loopPos,1,2,f)!=2) {
+            logW("could not read loop position! %s",strerror(errno));
+          } else {
+#ifdef TA_BIG_ENDIAN
+            loopPos=(loopPos>>8)|(loopPos<<8);
+#endif
+            sample->loopStart=16*(loopPos/9);
+            sample->loopEnd=sample->samples;
+            sample->loop=true;
+            sample->loopMode=DIV_SAMPLE_LOOP_FORWARD;
+          }
           len-=2;
           if (len==0) {
             fclose(f);

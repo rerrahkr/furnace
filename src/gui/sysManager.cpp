@@ -30,6 +30,14 @@ void FurnaceGUI::drawSysManager() {
     nextWindow=GUI_WINDOW_NOTHING;
   }
   if (!sysManagerOpen) return;
+  if (mobileUI) {
+    patWindowPos=(portrait?ImVec2(0.0f,(mobileMenuPos*-0.65*canvasH)):ImVec2((0.16*canvasH)+0.5*canvasW*mobileMenuPos,0.0f));
+    patWindowSize=(portrait?ImVec2(canvasW,canvasH-(0.16*canvasW)):ImVec2(canvasW-(0.16*canvasH),canvasH));
+    ImGui::SetNextWindowPos(patWindowPos);
+    ImGui::SetNextWindowSize(patWindowSize);
+  } else {
+    //ImGui::SetNextWindowSizeConstraints(ImVec2(440.0f*dpiScale,400.0f*dpiScale),ImVec2(canvasW,canvasH));
+  }
   if (ImGui::Begin("Chip Manager",&sysManagerOpen,globalWinFlags)) {
     ImGui::Checkbox("Preserve channel order",&preserveChanPos);
     if (ImGui::BeginTable("SystemList",3)) {
@@ -62,6 +70,7 @@ void FurnaceGUI::drawSysManager() {
             if (dragItem->IsDataType("FUR_SYS")) {
               if (sysToMove!=i && sysToMove>=0) {
                 e->swapSystem(sysToMove,i,preserveChanPos);
+                MARK_MODIFIED;
               }
               sysToMove=-1;
             }
@@ -82,6 +91,7 @@ void FurnaceGUI::drawSysManager() {
           DivSystem picked=systemPicker();
           if (picked!=DIV_SYSTEM_NULL) {
             e->changeSystem(i,picked,preserveChanPos);
+            MARK_MODIFIED;
             if (e->song.autoSystem) {
               autoDetectSystem();
             }
@@ -112,6 +122,8 @@ void FurnaceGUI::drawSysManager() {
           if (picked!=DIV_SYSTEM_NULL) {
             if (!e->addSystem(picked)) {
               showError("cannot add chip! ("+e->getLastError()+")");
+            } else {
+              MARK_MODIFIED;
             }
             if (e->song.autoSystem) {
               autoDetectSystem();

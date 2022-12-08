@@ -100,13 +100,14 @@ class DivPlatformYM2608: public DivPlatformOPN {
     size_t adpcmBMemLen;
     DivYM2608Interface iface;
     unsigned int sampleOffB[256];
+    bool sampleLoaded[256];
   
     DivPlatformAY8910* ay;
     unsigned char sampleBank;
     unsigned char writeRSSOff, writeRSSOn;
     int globalRSSVolume;
 
-    bool extMode;
+    bool extMode, noExtMacros;
     unsigned char prescale;
   
     double NOTE_OPNB(int ch, int note);
@@ -138,7 +139,8 @@ class DivPlatformYM2608: public DivPlatformOPN {
     const void* getSampleMem(int index);
     size_t getSampleMemCapacity(int index);
     size_t getSampleMemUsage(int index);
-    void renderSamples();
+    bool isSampleLoaded(int index, int sample);
+    void renderSamples(int chipID);
     void setFlags(const DivConfig& flags);
     int init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags);
     void quit();

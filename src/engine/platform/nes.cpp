@@ -214,7 +214,7 @@ void DivPlatformNES::tick(bool sysTick) {
         rWrite(0x4000+i*4,(chan[i].outVol==0)?0:255);
         chan[i].freqChanged=true;
       } else {
-        rWrite(0x4000+i*4,0x30|chan[i].outVol|((chan[i].duty&3)<<6));
+        rWrite(0x4000+i*4,(chan[i].envMode<<4)|chan[i].outVol|((chan[i].duty&3)<<6));
       }
     }
     if (chan[i].std.arp.had) {
@@ -239,7 +239,7 @@ void DivPlatformNES::tick(bool sysTick) {
         }
       }
       if (i!=2) {
-        rWrite(0x4000+i*4,0x30|chan[i].outVol|((chan[i].duty&3)<<6));
+        rWrite(0x4000+i*4,(chan[i].envMode<<4)|chan[i].outVol|((chan[i].duty&3)<<6));
       }
       if (i==3) { // noise
         chan[i].freqChanged=true;
@@ -289,11 +289,11 @@ void DivPlatformNES::tick(bool sysTick) {
       }
       if (i==3) { // noise
         rWrite(0x4002+i*4,(chan[i].duty<<7)|chan[i].freq);
-        rWrite(0x4003+i*4,0xf0);
+        rWrite(0x4003+i*4,(chan[i].len<<3));
       } else {
         rWrite(0x4002+i*4,chan[i].freq&0xff);
         if ((chan[i].prevFreq>>8)!=(chan[i].freq>>8) || i==2) {
-          rWrite(0x4003+i*4,0xf8|(chan[i].freq>>8));
+          rWrite(0x4003+i*4,(chan[i].len<<3)|(chan[i].freq>>8));
         }
         if (chan[i].freq!=65535 && chan[i].freq!=0) {
           chan[i].prevFreq=chan[i].freq;
@@ -419,7 +419,7 @@ int DivPlatformNES::dispatch(DivCommand c) {
       if (c.chan==2) {
         rWrite(0x4000+c.chan*4,0xff);
       } else if (!parent->song.brokenOutVol2) {
-        rWrite(0x4000+c.chan*4,0x30|chan[c.chan].vol|((chan[c.chan].duty&3)<<6));
+        rWrite(0x4000+c.chan*4,(chan[c.chan].envMode<<4)|chan[c.chan].vol|((chan[c.chan].duty&3)<<6));
       }
       break;
     case DIV_CMD_NOTE_OFF:
@@ -451,7 +451,7 @@ int DivPlatformNES::dispatch(DivCommand c) {
           if (c.chan==2) {
             rWrite(0x4000+c.chan*4,0xff);
           } else {
-            rWrite(0x4000+c.chan*4,0x30|chan[c.chan].vol|((chan[c.chan].duty&3)<<6));
+            rWrite(0x4000+c.chan*4,(chan[c.chan].envMode<<4)|chan[c.chan].vol|((chan[c.chan].duty&3)<<6));
           }
         }
       }
@@ -491,7 +491,7 @@ int DivPlatformNES::dispatch(DivCommand c) {
       if (c.chan==3) { // noise
         chan[c.chan].freqChanged=true;
       } else if (c.chan<2) {
-        rWrite(0x4000+c.chan*4,0x30|chan[c.chan].outVol|((chan[c.chan].duty&3)<<6));
+        rWrite(0x4000+c.chan*4,(chan[c.chan].active?((chan[c.chan].envMode<<4)|chan[c.chan].outVol):0x30)|((chan[c.chan].duty&3)<<6));
       }
       break;
     case DIV_CMD_NES_SWEEP:
@@ -506,6 +506,24 @@ int DivPlatformNES::dispatch(DivCommand c) {
         }
       }
       rWrite(0x4001+(c.chan*4),chan[c.chan].sweep);
+      break;
+    case DIV_CMD_NES_ENV_MODE:
+      chan[c.chan].envMode=c.value&3;
+      if (c.chan==3) { // noise
+        chan[c.chan].freqChanged=true;
+      } else if (c.chan<2) {
+        rWrite(0x4000+c.chan*4,(chan[c.chan].active?((chan[c.chan].envMode<<4)|chan[c.chan].outVol):0x30)|((chan[c.chan].duty&3)<<6));
+      }
+      break;
+    case DIV_CMD_NES_LENGTH:
+      if (c.chan>=4) break;
+      chan[c.chan].len=c.value&0x1f;
+      chan[c.chan].freqChanged=true;
+      chan[c.chan].prevFreq=-1;
+      break;
+    case DIV_CMD_NES_COUNT_MODE:
+      countMode=c.value;
+      rWrite(0x4017,countMode?0x80:0);
       break;
     case DIV_CMD_NES_DMC:
       rWrite(0x4011,c.value&0x7f);
@@ -572,6 +590,7 @@ void DivPlatformNES::forceIns() {
   }
   rWrite(0x4001,chan[0].sweep);
   rWrite(0x4005,chan[1].sweep);
+  rWrite(0x4017,countMode?0x80:0);
 }
 
 void* DivPlatformNES::getChanState(int ch) {
@@ -615,6 +634,7 @@ void DivPlatformNES::reset() {
   dpcmBank=0;
   dpcmMode=false;
   goingToLoop=false;
+  countMode=false;
 
   if (useNP) {
     nes1_NP->Reset();
@@ -643,13 +663,13 @@ bool DivPlatformNES::keyOffAffectsArp(int ch) {
 void DivPlatformNES::setFlags(const DivConfig& flags) {
   int clockSel=flags.getInt("clockSel",0);
   if (clockSel==2) { // Dendy
-    rate=COLOR_PAL*2.0/5.0;
+    chipClock=COLOR_PAL*2.0/5.0;
     apuType=2;
   } else if (clockSel==1) { // PAL
-    rate=COLOR_PAL*3.0/8.0;
+    chipClock=COLOR_PAL*3.0/8.0;
     apuType=1;
   } else { // NTSC
-    rate=COLOR_NTSC/2.0;
+    chipClock=COLOR_NTSC/2.0;
     apuType=0;
   }
   if (useNP) {
@@ -661,7 +681,8 @@ void DivPlatformNES::setFlags(const DivConfig& flags) {
   } else {
     nes->apu.type=apuType;
   }
-  chipClock=rate;
+  CHECK_CUSTOM_CLOCK;
+  rate=chipClock;
   for (int i=0; i<5; i++) {
     oscBuf[i]->rate=rate/32;
   }
@@ -701,12 +722,24 @@ size_t DivPlatformNES::getSampleMemUsage(int index) {
   return index==0?dpcmMemLen:0;
 }
 
-void DivPlatformNES::renderSamples() {
-  memset(dpcmMem,0,getSampleMemCapacity(0));
+bool DivPlatformNES::isSampleLoaded(int index, int sample) {
+  if (index!=0) return false;
+  if (sample<0 || sample>255) return false;
+  return sampleLoaded[sample];
+}
+
+void DivPlatformNES::renderSamples(int sysID) {
+  memset(dpcmMem,0,getSampleMemCapacity(0));\
+  memset(sampleLoaded,0,256*sizeof(bool));
 
   size_t memPos=0;
   for (int i=0; i<parent->song.sampleLen; i++) {
     DivSample* s=parent->song.sample[i];
+    if (!s->renderOn[0][sysID]) {
+      sampleOffDPCM[i]=0;
+      continue;
+    }
+
     unsigned int paddedLen=(s->lengthDPCM+63)&(~0x3f);
     logV("%d padded length: %d",i,paddedLen);
     if ((memPos&(~0x3fff))!=((memPos+paddedLen)&(~0x3fff))) {
@@ -724,6 +757,7 @@ void DivPlatformNES::renderSamples() {
       logW("out of DPCM memory for sample %d!",i);
     } else {
       memcpy(dpcmMem+memPos,s->dataDPCM,MIN(s->lengthDPCM,paddedLen));
+      sampleLoaded[i]=true;
     }
     sampleOffDPCM[i]=memPos;
     memPos+=paddedLen;

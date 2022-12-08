@@ -104,7 +104,7 @@ void DivPlatformSNES::tick(bool sysTick) {
   for (int i=0; i<8; i++) {
     chan[i].std.next();
     if (chan[i].std.vol.had) {
-      chan[i].outVol=VOL_SCALE_LOG(chan[i].vol&127,MIN(127,chan[i].std.vol.val),127);
+      chan[i].outVol=VOL_SCALE_LINEAR(chan[i].vol&127,MIN(127,chan[i].std.vol.val),127);
     }
     if (chan[i].std.arp.had) {
       if (!chan[i].inPorta) {
@@ -214,13 +214,13 @@ void DivPlatformSNES::tick(bool sysTick) {
           loop=start;
         } else if (chan[i].sample>=0 && chan[i].sample<parent->song.sampleLen) {
           start=sampleOff[chan[i].sample];
-          end=MIN(start+MAX(s->lengthBRR,1),getSampleMemCapacity());
+          end=MIN(start+MAX(s->lengthBRR+((s->loop && s->depth!=DIV_SAMPLE_DEPTH_BRR)?9:0),1),getSampleMemCapacity());
           loop=MAX(start,end-1);
           if (chan[i].audPos>0) {
             start=start+MIN(chan[i].audPos,s->lengthBRR-1)/16*9;
           }
           if (s->loopStart>=0) {
-            loop=start+s->loopStart/16*9;
+            loop=((s->depth!=DIV_SAMPLE_DEPTH_BRR)?9:0)+start+((s->loopStart/16)*9);
           }
         } else {
           start=0;
@@ -596,10 +596,16 @@ void DivPlatformSNES::writeOutVol(int ch) {
 
 void DivPlatformSNES::writeEnv(int ch) {
   if (chan[ch].state.useEnv) {
-    chWrite(ch,5,chan[ch].state.a|(chan[ch].state.d<<4)|0x80);
-    if (chan[ch].state.sus && chan[ch].active) {
-      chWrite(ch,6,chan[ch].state.s<<5);
+    if (chan[ch].state.sus) {
+      if (chan[ch].active) {
+        chWrite(ch,5,chan[ch].state.a|(chan[ch].state.d<<4)|0x80);
+        chWrite(ch,6,chan[ch].state.s<<5);
+      } else { // dec linear
+        chWrite(ch,7,0x80|chan[ch].state.r);
+        chWrite(ch,5,0);
+      }
     } else {
+      chWrite(ch,5,chan[ch].state.a|(chan[ch].state.d<<4)|0x80);
       chWrite(ch,6,chan[ch].state.r|(chan[ch].state.s<<5));
     }
   } else {
@@ -791,15 +797,27 @@ size_t DivPlatformSNES::getSampleMemUsage(int index) {
   return index == 0 ? sampleMemLen : 0;
 }
 
-void DivPlatformSNES::renderSamples() {
+bool DivPlatformSNES::isSampleLoaded(int index, int sample) {
+  if (index!=0) return false;
+  if (sample<0 || sample>255) return false;
+  return sampleLoaded[sample];
+}
+
+void DivPlatformSNES::renderSamples(int sysID) {
   memset(copyOfSampleMem,0,getSampleMemCapacity());
   memset(sampleOff,0,256*sizeof(unsigned int));
+  memset(sampleLoaded,0,256*sizeof(bool));
 
   // skip past sample table and wavetable buffer
   size_t memPos=sampleTableBase+8*4+8*9*16;
   for (int i=0; i<parent->song.sampleLen; i++) {
     DivSample* s=parent->song.sample[i];
-    int length=s->lengthBRR;
+    if (!s->renderOn[0][sysID]) {
+      sampleOff[i]=0;
+      continue;
+    }
+
+    int length=s->lengthBRR+((s->loop && s->depth!=DIV_SAMPLE_DEPTH_BRR)?9:0);
     int actualLength=MIN((int)(getSampleMemCapacity()-memPos)/9*9,length);
     if (actualLength>0) {
       sampleOff[i]=memPos;
@@ -816,6 +834,7 @@ void DivPlatformSNES::renderSamples() {
       logW("out of BRR memory for sample %d!",i);
       break;
     }
+    sampleLoaded[i]=true;
   }
   sampleMemLen=memPos;
   memcpy(sampleMem,copyOfSampleMem,65536);

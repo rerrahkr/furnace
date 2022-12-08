@@ -26,6 +26,9 @@ bool DivDispatch::sendDataToRealChip(short* bufL, short* bufR, size_t start, siz
 void DivDispatch::acquire(short* bufL, short* bufR, size_t start, size_t len) {
 }
 
+void DivDispatch::fillStream(std::vector<DivDelayedWrite>& stream, int sRate, size_t len) {
+}
+
 void DivDispatch::tick(bool sysTick) {
 }
 
@@ -153,11 +156,20 @@ size_t DivDispatch::getSampleMemCapacity(int index) {
   return 0;
 }
 
+const char* DivDispatch::getSampleMemName(int index) {
+  return NULL;
+}
+
 size_t DivDispatch::getSampleMemUsage(int index) {
   return 0;
 }
 
-void DivDispatch::renderSamples() {
+bool DivDispatch::isSampleLoaded(int index, int sample) {
+  printf("you are calling.\n");
+  return false;
+}
+
+void DivDispatch::renderSamples(int sysID) {
   
 }
 

@@ -33,14 +33,14 @@
 
 #define DEFAULT_NOTE_KEYS "5:7;6:4;7:3;8:16;10:6;11:8;12:24;13:10;16:11;17:9;18:26;19:28;20:12;21:17;22:1;23:19;24:23;25:5;26:14;27:2;28:21;29:0;30:100;31:13;32:15;34:18;35:20;36:22;38:25;39:27;43:100;46:101;47:29;48:31;53:102;"
 
-#if defined(_WIN32) || defined(__APPLE__)
+#if defined(_WIN32) || defined(__APPLE__) || defined(IS_MOBILE)
 #define POWER_SAVE_DEFAULT 1
 #else
 // currently off on Linux/other due to Mesa catch-up behavior.
 #define POWER_SAVE_DEFAULT 0
 #endif
 
-#ifdef __HAIKU__
+#if defined(__HAIKU__) || defined(IS_MOBILE)
 // NFD doesn't support Haiku
 #define SYS_FILE_DIALOG_DEFAULT 0
 #else
@@ -239,6 +239,12 @@ void FurnaceGUI::drawSettings() {
     nextWindow=GUI_WINDOW_NOTHING;
   }
   if (!settingsOpen) return;
+  if (mobileUI) {
+    ImVec2 setWindowPos=ImVec2(0,0);
+    ImVec2 setWindowSize=ImVec2(canvasW,canvasH);
+    ImGui::SetNextWindowPos(setWindowPos);
+    ImGui::SetNextWindowSize(setWindowSize);
+  }
   if (ImGui::Begin("Settings",&settingsOpen,ImGuiWindowFlags_NoDocking|globalWinFlags)) {
     if (!settingsOpen) {
       settingsOpen=true;
@@ -332,7 +338,7 @@ void FurnaceGUI::drawSettings() {
             settings.initialSys.set("pan0",0);
             settings.initialSys.set("flags0","");
             settings.initialSys.set("id1",e->systemToFileFur(DIV_SYSTEM_SMS));
-            settings.initialSys.set("vol1",64);
+            settings.initialSys.set("vol1",32);
             settings.initialSys.set("pan1",0);
             settings.initialSys.set("flags1","");
             settings.initialSysName="Sega Genesis/Mega Drive";
@@ -343,10 +349,14 @@ void FurnaceGUI::drawSettings() {
           ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
           ImGui::InputText("##InitSysName",&settings.initialSysName);
 
+          int sysCount=0;
+          int doRemove=-1;
           for (size_t i=0; settings.initialSys.getInt(fmt::sprintf("id%d",i),0); i++) {
             DivSystem sysID=e->systemFromFileFur(settings.initialSys.getInt(fmt::sprintf("id%d",i),0));
             signed char sysVol=settings.initialSys.getInt(fmt::sprintf("vol%d",i),0);
             signed char sysPan=settings.initialSys.getInt(fmt::sprintf("pan%d",i),0);
+
+            sysCount=i+1;
 
             //bool doRemove=false;
             bool doInvert=sysVol&128;
@@ -373,7 +383,7 @@ void FurnaceGUI::drawSettings() {
             ImGui::SameLine();
             //ImGui::BeginDisabled(settings.initialSys.size()<=4);
             if (ImGui::Button(ICON_FA_MINUS "##InitSysRemove")) {
-              //doRemove=true;
+              doRemove=i;
             }
             //ImGui::EndDisabled();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x-(50.0f*dpiScale));
@@ -398,17 +408,31 @@ void FurnaceGUI::drawSettings() {
             }
 
             ImGui::PopID();
-            /*if (doRemove && settings.initialSys.size()>=8) {
-              settings.initialSys.erase(settings.initialSys.begin()+i,settings.initialSys.begin()+i+4);
-              i-=4;
-            }*/
           }
 
-          if (ImGui::Button(ICON_FA_PLUS "##InitSysAdd")) {
-            /*settings.initialSys.push_back(DIV_SYSTEM_YM2612);
-            settings.initialSys.push_back(64);
-            settings.initialSys.push_back(0);
-            settings.initialSys.push_back(0);*/
+          if (doRemove>=0 && sysCount>1) {
+            for (int i=doRemove; i<sysCount-1; i++) {
+              int sysID=settings.initialSys.getInt(fmt::sprintf("id%d",i+1),0);
+              int sysVol=settings.initialSys.getInt(fmt::sprintf("vol%d",i+1),0);
+              int sysPan=settings.initialSys.getInt(fmt::sprintf("pan%d",i+1),0);
+              String sysFlags=settings.initialSys.getString(fmt::sprintf("flags%d",i+1),"");
+              settings.initialSys.set(fmt::sprintf("id%d",i),sysID);
+              settings.initialSys.set(fmt::sprintf("vol%d",i),sysVol);
+              settings.initialSys.set(fmt::sprintf("pan%d",i),sysPan);
+              settings.initialSys.set(fmt::sprintf("flags%d",i),sysFlags);
+            }
+
+            settings.initialSys.remove(fmt::sprintf("id%d",sysCount-1));
+            settings.initialSys.remove(fmt::sprintf("vol%d",sysCount-1));
+            settings.initialSys.remove(fmt::sprintf("pan%d",sysCount-1));
+            settings.initialSys.remove(fmt::sprintf("flags%d",sysCount-1));
+          }
+
+          if (sysCount<32) if (ImGui::Button(ICON_FA_PLUS "##InitSysAdd")) {
+            settings.initialSys.set(fmt::sprintf("id%d",sysCount),(int)e->systemToFileFur(DIV_SYSTEM_YM2612));
+            settings.initialSys.set(fmt::sprintf("vol%d",sysCount),64);
+            settings.initialSys.set(fmt::sprintf("pan%d",sysCount),0);
+            settings.initialSys.set(fmt::sprintf("flags%d",sysCount),"");
           }
 
           ImGui::Separator();
@@ -522,6 +546,7 @@ void FurnaceGUI::drawSettings() {
             ImGui::SetTooltip("saves power by lowering the frame rate to 2fps when idle.\nmay cause issues under Mesa drivers!");
           }
 
+#ifndef IS_MOBILE
           bool noThreadedInputB=settings.noThreadedInput;
           if (ImGui::Checkbox("Disable threaded input (restart after changing!)",&noThreadedInputB)) {
             settings.noThreadedInput=noThreadedInputB;
@@ -537,6 +562,7 @@ void FurnaceGUI::drawSettings() {
           if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("remembers the window's last position on startup.");
           }
+#endif
 
           bool blankInsB=settings.blankIns;
           if (ImGui::Checkbox("New instruments are blank",&blankInsB)) {
@@ -546,6 +572,24 @@ void FurnaceGUI::drawSettings() {
           bool saveUnusedPatternsB=settings.saveUnusedPatterns;
           if (ImGui::Checkbox("Save unused patterns",&saveUnusedPatternsB)) {
             settings.saveUnusedPatterns=saveUnusedPatternsB;
+          }
+
+          ImGui::Text("Audio export loop/fade out time:");
+          if (ImGui::RadioButton("Set to these values on start-up:##fot0",settings.persistFadeOut==0)) {
+            settings.persistFadeOut=0;
+          }
+          ImGui::BeginDisabled(settings.persistFadeOut);
+          if (ImGui::InputInt("Loops",&settings.exportLoops,1,2)) {
+            if (exportLoops<0) exportLoops=0;
+            exportLoops=settings.exportLoops;
+          }
+          if (ImGui::InputDouble("Fade out (seconds)",&settings.exportFadeOut,1.0,2.0,"%.1f")) {
+            if (exportFadeOut<0.0) exportFadeOut=0.0;
+            exportFadeOut=settings.exportFadeOut;
+          }
+          ImGui::EndDisabled();
+          if (ImGui::RadioButton("Remember last values##fot1",settings.persistFadeOut==1)) {
+            settings.persistFadeOut=1;
           }
 
           ImGui::Text("Note preview behavior:");
@@ -1300,6 +1344,23 @@ void FurnaceGUI::drawSettings() {
             settings.susPosition=1;
           }
 
+          ImGui::Text("Macro editor layout:");
+          if (ImGui::RadioButton("Unified##mel0",settings.macroLayout==0)) {
+            settings.macroLayout=0;
+          }
+          if (ImGui::RadioButton("Mobile##mel1",settings.macroLayout==1)) {
+            settings.macroLayout=1;
+          }
+          if (ImGui::RadioButton("Grid##mel2",settings.macroLayout==2)) {
+            settings.macroLayout=2;
+          }
+          if (ImGui::RadioButton("Single (with list)##mel3",settings.macroLayout==3)) {
+            settings.macroLayout=3;
+          }
+          if (ImGui::RadioButton("Single (combo box)##mel4",settings.macroLayout==4)) {
+            settings.macroLayout=4;
+          }
+
           ImGui::Separator();
 
           ImGui::Text("Namco 163 chip name");
@@ -1459,6 +1520,11 @@ void FurnaceGUI::drawSettings() {
             settings.sysSeparators=sysSeparatorsB;
           }*/
 
+          bool ordersCursorB=settings.ordersCursor;
+          if (ImGui::Checkbox("Highlight channel at cursor in Orders",&ordersCursorB)) {
+            settings.ordersCursor=ordersCursorB;
+          }
+
           bool partyTimeB=settings.partyTime;
           if (ImGui::Checkbox("About screen party time",&partyTimeB)) {
             settings.partyTime=partyTimeB;
@@ -1472,11 +1538,6 @@ void FurnaceGUI::drawSettings() {
           bool waveLayoutB=settings.waveLayout;
           if (ImGui::Checkbox("Use compact wave editor",&waveLayoutB)) {
             settings.waveLayout=waveLayoutB;
-          }
-
-          bool sampleLayoutB=settings.sampleLayout;
-          if (ImGui::Checkbox("Use compact sample editor",&sampleLayoutB)) {
-            settings.sampleLayout=sampleLayoutB;
           }
 
           bool oldMacroVSliderB=settings.oldMacroVSlider;
@@ -1782,12 +1843,19 @@ void FurnaceGUI::drawSettings() {
             if (ImGui::TreeNode("Sample Editor")) {
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_BG,"Background");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_FG,"Waveform");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_TIME_BG,"Time background");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_TIME_FG,"Time text");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_LOOP,"Loop region");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_CENTER,"Center guide");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_GRID,"Grid");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_SEL,"Selection");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_SEL_POINT,"Selection points");
               UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_NEEDLE,"Preview needle");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_NEEDLE_PLAYING,"Playing needles");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_LOOP_POINT,"Loop markers");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_CHIP_DISABLED,"Chip select: disabled");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_CHIP_ENABLED,"Chip select: enabled");
+              UI_COLOR_CONFIG(GUI_COLOR_SAMPLE_CHIP_WARNING,"Chip select: enabled (failure)");
               ImGui::TreePop();
             }
             if (ImGui::TreeNode("Pattern Manager")) {
@@ -2280,7 +2348,7 @@ void FurnaceGUI::syncSettings() {
   settings.wrapVertical=e->getConfInt("wrapVertical",0);
   settings.macroView=e->getConfInt("macroView",0);
   settings.fmNames=e->getConfInt("fmNames",0);
-  settings.allowEditDocking=e->getConfInt("allowEditDocking",0);
+  settings.allowEditDocking=e->getConfInt("allowEditDocking",1);
   settings.chipNames=e->getConfInt("chipNames",0);
   settings.overflowHighlight=e->getConfInt("overflowHighlight",0);
   settings.partyTime=e->getConfInt("partyTime",0);
@@ -2370,6 +2438,11 @@ void FurnaceGUI::syncSettings() {
   settings.midiOutClock=e->getConfInt("midiOutClock",0);
   settings.midiOutMode=e->getConfInt("midiOutMode",1);
   settings.centerPattern=e->getConfInt("centerPattern",0);
+  settings.ordersCursor=e->getConfInt("ordersCursor",1);
+  settings.persistFadeOut=e->getConfInt("persistFadeOut",1);
+  settings.exportLoops=e->getConfInt("exportLoops",0);
+  settings.exportFadeOut=e->getConfDouble("exportFadeOut",0.0);
+  settings.macroLayout=e->getConfInt("macroLayout",0);
 
   clampSetting(settings.mainFontSize,2,96);
   clampSetting(settings.patFontSize,2,96);
@@ -2474,6 +2547,12 @@ void FurnaceGUI::syncSettings() {
   clampSetting(settings.midiOutClock,0,1);
   clampSetting(settings.midiOutMode,0,2);
   clampSetting(settings.centerPattern,0,1);
+  clampSetting(settings.ordersCursor,0,1);
+  clampSetting(settings.persistFadeOut,0,1);
+  clampSetting(settings.macroLayout,0,4);
+
+  if (settings.exportLoops<0.0) settings.exportLoops=0.0;
+  if (settings.exportFadeOut<0.0) settings.exportFadeOut=0.0;
 
   String initialSys2=e->getConfString("initialSys2","");
   if (initialSys2.empty()) {
@@ -2639,6 +2718,11 @@ void FurnaceGUI::commitSettings() {
   e->setConf("midiOutClock",settings.midiOutClock);
   e->setConf("midiOutMode",settings.midiOutMode);
   e->setConf("centerPattern",settings.centerPattern);
+  e->setConf("ordersCursor",settings.ordersCursor);
+  e->setConf("persistFadeOut",settings.persistFadeOut);
+  e->setConf("exportLoops",settings.exportLoops);
+  e->setConf("exportFadeOut",settings.exportFadeOut);
+  e->setConf("macroLayout",settings.macroLayout);
 
   // colors
   for (int i=0; i<GUI_COLOR_MAX; i++) {
@@ -3046,6 +3130,14 @@ void FurnaceGUI::popAccentColors() {
 #define SYSTEM_PAT_FONT_PATH_1 "/System/Library/Fonts/SFNSMono.ttf"
 #define SYSTEM_PAT_FONT_PATH_2 "/System/Library/Fonts/Courier New.ttf"
 #define SYSTEM_PAT_FONT_PATH_3 "/System/Library/Fonts/Courier New.ttf"
+#elif defined(ANDROID)
+#define SYSTEM_FONT_PATH_1 "/system/fonts/Roboto-Regular.ttf"
+#define SYSTEM_FONT_PATH_2 "/system/fonts/DroidSans.ttf"
+#define SYSTEM_FONT_PATH_3 "/system/fonts/DroidSans.ttf"
+// ???
+#define SYSTEM_PAT_FONT_PATH_1 "/system/fonts/RobotoMono-Regular.ttf"
+#define SYSTEM_PAT_FONT_PATH_2 "/system/fonts/DroidSansMono.ttf"
+#define SYSTEM_PAT_FONT_PATH_3 "/system/fonts/CutiveMono.ttf"
 #else
 #define SYSTEM_FONT_PATH_1 "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 #define SYSTEM_FONT_PATH_2 "/usr/share/fonts/TTF/DejaVuSans.ttf"
@@ -3123,7 +3215,7 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
   }
 
   ImVec4 secondaryActive=uiColors[GUI_COLOR_ACCENT_SECONDARY];
-  ImVec4 secondaryHover, secondary, secondarySemiActive;
+  ImVec4 secondaryHoverActual, secondaryHover, secondary, secondarySemiActive;
   secondarySemiActive.w=secondaryActive.w;
   secondaryHover.w=secondaryActive.w;
   secondary.w=secondaryActive.w;
@@ -3139,6 +3231,12 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
     ImGui::ColorConvertHSVtoRGB(hue,sat*0.9,val*0.25,secondary.x,secondary.y,secondary.z);
   }
 
+  secondaryHoverActual=secondaryHover;
+
+  if (mobileUI) { // disable all hovered colors
+    primaryHover=primary;
+    secondaryHover=secondary;
+  }
 
   sty.Colors[ImGuiCol_WindowBg]=uiColors[GUI_COLOR_FRAME_BACKGROUND];
   sty.Colors[ImGuiCol_ModalWindowDimBg]=uiColors[GUI_COLOR_MODAL_BACKDROP];
@@ -3165,7 +3263,7 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
   sty.Colors[ImGuiCol_SliderGrabActive]=primaryActive;
   sty.Colors[ImGuiCol_TitleBgActive]=primary;
   sty.Colors[ImGuiCol_CheckMark]=primaryActive;
-  sty.Colors[ImGuiCol_TextSelectedBg]=secondaryHover;
+  sty.Colors[ImGuiCol_TextSelectedBg]=secondaryHoverActual;
   sty.Colors[ImGuiCol_PlotHistogram]=uiColors[GUI_COLOR_MACRO_OTHER];
   sty.Colors[ImGuiCol_PlotHistogramHovered]=uiColors[GUI_COLOR_MACRO_OTHER];
   sty.Colors[ImGuiCol_Border]=uiColors[GUI_COLOR_BORDER];
@@ -3188,12 +3286,17 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
     sty.FrameShading=(float)settings.guiColorsShading/100.0f;
   }
 
+  if (mobileUI) {
+    sty.FramePadding=ImVec2(8.0f,6.0f);
+  }
+
   sty.ScaleAllSizes(dpiScale);
 
   ImGui::GetStyle()=sty;
 
   ImGui::GetIO().ConfigInputTrickleEventQueue=settings.eventDelay;
   ImGui::GetIO().ConfigWindowsMoveFromTitleBarOnly=settings.moveWindowTitle;
+  ImGui::GetIO().ConfigInertialScrollToleranceSqr=pow(dpiScale*4.0f,2.0f);
 
   for (int i=0; i<256; i++) {
     ImVec4& base=uiColors[GUI_COLOR_PATTERN_EFFECT_PITCH];
@@ -3344,7 +3447,9 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
       }
     }
 
-    if ((bigFont=ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(font_plexSans_compressed_data,font_plexSans_compressed_size,40*dpiScale))==NULL) {
+    // 0x39B = Λ
+    static const ImWchar bigFontRange[]={0x20,0xFF,0x39b,0x39b,0};
+    if ((bigFont=ImGui::GetIO().Fonts->AddFontFromMemoryCompressedTTF(font_plexSans_compressed_data,font_plexSans_compressed_size,40*dpiScale,NULL,bigFontRange))==NULL) {
       logE("could not load big UI font!");
     }
 
@@ -3389,5 +3494,7 @@ void FurnaceGUI::applyUISettings(bool updateFonts) {
   if (updateFonts) {
     if (fileDialog!=NULL) delete fileDialog;
     fileDialog=new FurnaceGUIFileDialog(settings.sysFileDialog);
+
+    fileDialog->mobileUI=mobileUI;
   }
 }

@@ -153,7 +153,7 @@ void DivPlatformPCE::tick(bool sysTick) {
 
     chan[i].std.next();
     if (chan[i].std.vol.had) {
-      chan[i].outVol=VOL_SCALE_LOG(chan[i].vol&31,MIN(31,chan[i].std.vol.val),31);
+      chan[i].outVol=VOL_SCALE_LOG_BROKEN(chan[i].vol&31,MIN(31,chan[i].std.vol.val),31);
       if (chan[i].furnaceDac && chan[i].pcm) {
         // ignore for now
       } else {
@@ -251,6 +251,11 @@ void DivPlatformPCE::tick(bool sysTick) {
       if (chan[i].keyOff) chan[i].keyOff=false;
       chan[i].freqChanged=false;
     }
+  }
+  if (updateLFO) {
+    rWrite(0x08,lfoSpeed);
+    rWrite(0x09,lfoMode);
+    updateLFO=false;
   }
 }
 
@@ -389,13 +394,11 @@ int DivPlatformPCE::dispatch(DivCommand c) {
       } else {
         lfoMode=c.value;
       }
-      rWrite(0x08,lfoSpeed);
-      rWrite(0x09,lfoMode);
+      updateLFO=true;
       break;
     case DIV_CMD_PCE_LFO_SPEED:
       lfoSpeed=255-c.value;
-      rWrite(0x08,lfoSpeed);
-      rWrite(0x09,lfoMode);
+      updateLFO=true;
       break;
     case DIV_CMD_NOTE_PORTA: {
       int destFreq=NOTE_PERIODIC(c.value2);
@@ -525,8 +528,7 @@ void DivPlatformPCE::reset() {
   rWrite(0,0);
   rWrite(0x01,0xff);
   // set LFO
-  rWrite(0x08,lfoSpeed);
-  rWrite(0x09,lfoMode);
+  updateLFO=true;
   // set per-channel initial panning
   for (int i=0; i<6; i++) {
     chWrite(i,0x05,isMuted[i]?0:chan[i].pan);
@@ -563,6 +565,7 @@ void DivPlatformPCE::setFlags(const DivConfig& flags) {
   } else {
     chipClock=COLOR_NTSC;
   }
+  CHECK_CUSTOM_CLOCK;
   antiClickEnabled=!flags.getBool("noAntiClick",false);
   rate=chipClock/12;
   for (int i=0; i<6; i++) {
@@ -588,6 +591,7 @@ int DivPlatformPCE::init(DivEngine* p, int channels, int sugRate, const DivConfi
   parent=p;
   dumpWrites=false;
   skipRegisterWrites=false;
+  updateLFO=false;
   for (int i=0; i<6; i++) {
     isMuted[i]=false;
     oscBuf[i]=new DivDispatchOscBuffer;

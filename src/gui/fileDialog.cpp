@@ -4,6 +4,8 @@
 
 #ifdef USE_NFD
 #include <nfd.h>
+#elif defined(ANDROID)
+#include <SDL.h>
 #else
 #include "../../extern/pfd-fixed/portable-file-dialogs.h"
 #endif
@@ -78,6 +80,14 @@ bool FurnaceGUIFileDialog::openLoad(String header, std::vector<String> filter, c
   if (opened) return false;
   saving=false;
   curPath=path;
+
+  // strip excess directory separators
+  while (!curPath.empty()) {
+    if (curPath[curPath.size()-1]!=DIR_SEPARATOR) break;
+    curPath.erase(curPath.size()-1);
+  }
+  curPath+=DIR_SEPARATOR;
+
   logD("opening load file dialog with curPath %s",curPath.c_str());
   if (sysDialog) {
 #ifdef USE_NFD
@@ -87,13 +97,61 @@ bool FurnaceGUIFileDialog::openLoad(String header, std::vector<String> filter, c
 #else
     dialogO=new std::thread(_nfdThread,NFDState(false,header,filter,path,clickCallback,allowMultiple),&dialogOK,&nfdResult,&hasError);
 #endif
+#elif defined(ANDROID)
+    hasError=false;
+    if (jniEnv==NULL) {
+      jniEnv=(JNIEnv*)SDL_AndroidGetJNIEnv();
+      if (jniEnv==NULL) {
+        hasError=true;
+        logE("could not acquire JNI env!");
+        return false;
+      }
+    }
+
+    jobject activity=(jobject)SDL_AndroidGetActivity();
+    if (activity==NULL) {
+      hasError=true;
+      logE("the Activity is NULL!");
+      return false;
+    }
+
+    jclass class_=jniEnv->GetObjectClass(activity);
+    jmethodID showFileDialog=jniEnv->GetMethodID(class_,"showFileDialog","()V");
+
+    if (showFileDialog==NULL) {
+      logE("method showFileDialog not found!");
+      hasError=true;
+      jniEnv->DeleteLocalRef(class_);
+      jniEnv->DeleteLocalRef(activity);
+      return false;
+    }
+
+    jniEnv->CallVoidMethod(activity,showFileDialog);
+
+    /*if (!(bool)mret) {
+      hasError=true;
+      logW("could not open Android file picker...");
+    }*/
+
+    jniEnv->DeleteLocalRef(class_);
+    jniEnv->DeleteLocalRef(activity);
+    return true;
 #else
     dialogO=new pfd::open_file(header,path,filter,allowMultiple?(pfd::opt::multiselect):(pfd::opt::none));
     hasError=!pfd::settings::available();
 #endif
   } else {
     hasError=false;
+
+#ifdef ANDROID
+    if (!SDL_AndroidRequestPermission("android.permission.READ_EXTERNAL_STORAGE")) {
+      return false;
+    }
+#endif
+
+    ImGuiFileDialog::Instance()->singleClickSel=mobileUI;
     ImGuiFileDialog::Instance()->DpiScale=dpiScale;
+    ImGuiFileDialog::Instance()->mobileMode=mobileUI;
     ImGuiFileDialog::Instance()->OpenModal("FileDialog",header,noSysFilter,path,allowMultiple?999:1,nullptr,0,clickCallback);
   }
   opened=true;
@@ -102,8 +160,23 @@ bool FurnaceGUIFileDialog::openLoad(String header, std::vector<String> filter, c
 
 bool FurnaceGUIFileDialog::openSave(String header, std::vector<String> filter, const char* noSysFilter, String path, double dpiScale) {
   if (opened) return false;
+
+#ifdef ANDROID
+    if (!SDL_AndroidRequestPermission("android.permission.WRITE_EXTERNAL_STORAGE")) {
+      return false;
+    }
+#endif
+
   saving=true;
   curPath=path;
+
+  // strip excess directory separators
+  while (!curPath.empty()) {
+    if (curPath[curPath.size()-1]!=DIR_SEPARATOR) break;
+    curPath.erase(curPath.size()-1);
+  }
+  curPath+=DIR_SEPARATOR;
+
   logD("opening save file dialog with curPath %s",curPath.c_str());
   if (sysDialog) {
 #ifdef USE_NFD
@@ -113,13 +186,55 @@ bool FurnaceGUIFileDialog::openSave(String header, std::vector<String> filter, c
 #else
     dialogS=new std::thread(_nfdThread,NFDState(true,header,filter,path,NULL,false),&dialogOK,&nfdResult,&hasError);
 #endif
+#elif defined(ANDROID)
+    hasError=false;
+    if (jniEnv==NULL) {
+      jniEnv=(JNIEnv*)SDL_AndroidGetJNIEnv();
+      if (jniEnv==NULL) {
+        hasError=true;
+        logE("could not acquire JNI env!");
+        return false;
+      }
+    }
+
+    jobject activity=(jobject)SDL_AndroidGetActivity();
+    if (activity==NULL) {
+      hasError=true;
+      logE("the Activity is NULL!");
+      return false;
+    }
+
+    jclass class_=jniEnv->GetObjectClass(activity);
+    jmethodID showSaveFileDialog=jniEnv->GetMethodID(class_,"showSaveFileDialog","()V");
+
+    if (showSaveFileDialog==NULL) {
+      logE("method showSaveFileDialog not found!");
+      hasError=true;
+      jniEnv->DeleteLocalRef(class_);
+      jniEnv->DeleteLocalRef(activity);
+      return false;
+    }
+
+    jniEnv->CallVoidMethod(activity,showSaveFileDialog);
+
+    /*if (!(bool)mret) {
+      hasError=true;
+      logW("could not open Android file picker...");
+    }*/
+
+    jniEnv->DeleteLocalRef(class_);
+    jniEnv->DeleteLocalRef(activity);
+    return true;
 #else
     dialogS=new pfd::save_file(header,path,filter);
     hasError=!pfd::settings::available();
 #endif
   } else {
     hasError=false;
+
+    ImGuiFileDialog::Instance()->singleClickSel=false;
     ImGuiFileDialog::Instance()->DpiScale=dpiScale;
+    ImGuiFileDialog::Instance()->mobileMode=mobileUI;
     ImGuiFileDialog::Instance()->OpenModal("FileDialog",header,noSysFilter,path,1,nullptr,ImGuiFileDialogFlags_ConfirmOverwrite);
   }
   opened=true;
@@ -141,7 +256,9 @@ void FurnaceGUIFileDialog::close() {
 #ifdef USE_NFD
         dialogS->join();
 #endif
+#ifndef ANDROID
         delete dialogS;
+#endif
         dialogS=NULL;
       }
     } else {
@@ -149,7 +266,9 @@ void FurnaceGUIFileDialog::close() {
 #ifdef USE_NFD
         dialogO->join();
 #endif
+#ifndef ANDROID
         delete dialogO;
+#endif
         dialogO=NULL;
       }
     }
@@ -178,6 +297,9 @@ bool FurnaceGUIFileDialog::render(const ImVec2& min, const ImVec2& max) {
       dialogOK=false;
       return true;
     }
+    return false;
+#elif defined(ANDROID)
+    // TODO: detect when file picker is closed
     return false;
 #else
     if (saving) {

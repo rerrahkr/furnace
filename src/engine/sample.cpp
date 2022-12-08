@@ -39,6 +39,197 @@ DivSampleHistory::~DivSampleHistory() {
   if (data!=NULL) delete[] data;
 }
 
+void DivSample::putSampleData(SafeWriter* w) {
+  size_t blockStartSeek, blockEndSeek;
+
+  w->write("SMP2",4);
+  blockStartSeek=w->tell();
+  w->writeI(0);
+
+  w->writeString(name,false);
+  w->writeI(samples);
+  w->writeI(rate);
+  w->writeI(centerRate);
+  w->writeC(depth);
+  w->writeC(loopMode);
+  w->writeC(brrEmphasis);
+  w->writeC(0); // reserved
+  w->writeI(loop?loopStart:-1);
+  w->writeI(loop?loopEnd:-1);
+
+  for (int i=0; i<4; i++) {
+    unsigned int out=0;
+    for (int j=0; j<32; j++) {
+      if (renderOn[i][j]) out|=1<<j;
+    }
+    w->writeI(out);
+  }
+
+#ifdef TA_BIG_ENDIAN
+  // store 16-bit samples as little-endian
+  if (depth==DIV_SAMPLE_DEPTH_16BIT) {
+    unsigned char* sampleBuf=(unsigned char*)getCurBuf();
+    size_t bufLen=getCurBufLen();
+    for (size_t i=0; i<bufLen; i+=2) {
+      w->writeC(sampleBuf[i+1]);
+      w->writeC(sampleBuf[i]);
+    }
+  } else {
+    w->write(getCurBuf(),getCurBufLen());
+  }
+#else
+  w->write(getCurBuf(),getCurBufLen());
+#endif
+
+  blockEndSeek=w->tell();
+  w->seek(blockStartSeek,SEEK_SET);
+  w->writeI(blockEndSeek-blockStartSeek-4);
+  w->seek(0,SEEK_END);
+}
+
+// Delek why
+static double samplePitchesSD[11]={
+  0.1666666666, 0.2, 0.25, 0.333333333, 0.5,
+  1,
+  2, 3, 4, 5, 6
+};
+
+DivDataErrors DivSample::readSampleData(SafeReader& reader, short version) {
+  int vol=0;
+  int pitch=0;
+  char magic[4];
+
+  reader.read(magic,4);
+  if (memcmp(magic,"SMPL",4)!=0 && memcmp(magic,"SMP2",4)!=0) {
+    logV("header is invalid: %c%c%c%c",magic[0],magic[1],magic[2],magic[3]);
+    return DIV_DATA_INVALID_HEADER;
+  }
+  bool isNewSample=(memcmp(magic,"SMP2",4)==0);
+  reader.readI();
+  if (!isNewSample) logV("(old sample)");
+
+  name=reader.readString();
+  samples=reader.readI();
+  if (!isNewSample) {
+    loopEnd=samples;
+  }
+  rate=reader.readI();
+
+  if (isNewSample) {
+    centerRate=reader.readI();
+    depth=(DivSampleDepth)reader.readC();
+    if (version>=123) {
+      loopMode=(DivSampleLoopMode)reader.readC();
+    } else {
+      loopMode=DIV_SAMPLE_LOOP_FORWARD;
+      reader.readC();
+    }
+
+    if (version>=129) {
+      brrEmphasis=reader.readC();
+    } else {
+      reader.readC();
+    }
+    // reserved
+    reader.readC();
+
+    loopStart=reader.readI();
+    loopEnd=reader.readI();
+    loop=(loopStart>=0)&&(loopEnd>=0);
+
+    for (int i=0; i<4; i++) {
+      unsigned int outMask=(unsigned int)reader.readI();
+      for (int j=0; j<32; j++) {
+        renderOn[i][j]=outMask&(1<<j);
+      }
+    }
+  } else {
+    if (version<58) {
+      vol=reader.readS();
+      pitch=reader.readS();
+    } else {
+      reader.readI();
+    }
+    depth=(DivSampleDepth)reader.readC();
+
+    // reserved
+    reader.readC();
+
+    // while version 32 stored this value, it was unused.
+    if (version>=38) {
+      centerRate=(unsigned short)reader.readS();
+    } else {
+      reader.readS();
+    }
+
+    if (version>=19) {
+      loopStart=reader.readI();
+      loop=(loopStart>=0)&&(loopEnd>=0);
+    } else {
+      reader.readI();
+    }
+  }
+
+  if (version>=58) { // modern sample
+    init(samples);
+    reader.read(getCurBuf(),getCurBufLen());
+#ifdef TA_BIG_ENDIAN
+    // convert 16-bit samples to big-endian
+    if (depth==DIV_SAMPLE_DEPTH_16BIT) {
+      unsigned char* sampleBuf=(unsigned char*)getCurBuf();
+      size_t sampleBufLen=getCurBufLen();
+      for (size_t pos=0; pos<sampleBufLen; pos+=2) {
+        sampleBuf[pos]^=sampleBuf[pos+1];
+        sampleBuf[pos+1]^=sampleBuf[pos];
+        sampleBuf[pos]^=sampleBuf[pos+1];
+      }
+    }
+#endif
+  } else { // legacy sample
+    int length=samples;
+    short* data=new short[length];
+    reader.read(data,2*length);
+
+#ifdef TA_BIG_ENDIAN
+    // convert 16-bit samples to big-endian
+    for (int pos=0; pos<length; pos++) {
+      data[pos]=((unsigned short)data[pos]>>8)|((unsigned short)data[pos]<<8);
+    }
+#endif
+
+    if (pitch!=5) {
+      logD("scaling from %d...",pitch);
+    }
+
+    // render data
+    if (depth!=DIV_SAMPLE_DEPTH_8BIT && depth!=DIV_SAMPLE_DEPTH_16BIT) {
+      logW("sample depth is wrong! (%d)",depth);
+      depth=DIV_SAMPLE_DEPTH_16BIT;
+    }
+    samples=(double)samples/samplePitchesSD[pitch];
+    init(samples);
+
+    unsigned int k=0;
+    float mult=(float)(vol)/50.0f;
+    for (double j=0; j<length; j+=samplePitchesSD[pitch]) {
+      if (k>=samples) {
+        break;
+      }
+      if (depth==DIV_SAMPLE_DEPTH_8BIT) {
+        float next=(float)(data[(unsigned int)j]-0x80)*mult;
+        data8[k++]=fmin(fmax(next,-128),127);
+      } else {
+        float next=(float)data[(unsigned int)j]*mult;
+        data16[k++]=fmin(fmax(next,-32768),32767);
+      }
+    }
+
+    delete[] data;
+  }
+
+  return DIV_DATA_SUCCESS;
+}
+
 bool DivSample::isLoopable() {
   return loop && ((loopStart>=0 && loopStart<loopEnd) && (loopEnd>loopStart && loopEnd<=(int)samples));
 }
@@ -303,8 +494,8 @@ bool DivSample::initInternal(DivSampleDepth d, int count) {
     case DIV_SAMPLE_DEPTH_BRR: // BRR
       if (dataBRR!=NULL) delete[] dataBRR;
       lengthBRR=9*((count+15)/16);
-      dataBRR=new unsigned char[lengthBRR];
-      memset(dataBRR,0,lengthBRR);
+      dataBRR=new unsigned char[lengthBRR+9];
+      memset(dataBRR,0,lengthBRR+9);
       break;
     case DIV_SAMPLE_DEPTH_VOX: // VOX
       if (dataVOX!=NULL) delete[] dataVOX;
@@ -854,7 +1045,7 @@ void DivSample::render(unsigned int formatMask) {
         }
         break;
       case DIV_SAMPLE_DEPTH_BRR: // BRR
-        brrDecode(dataBRR,data16,lengthBRR);
+        brrDecode(dataBRR,data16,lengthBRR,brrEmphasis);
         break;
       case DIV_SAMPLE_DEPTH_VOX: // VOX
         oki_decode(dataVOX,data16,samples);
@@ -913,7 +1104,7 @@ void DivSample::render(unsigned int formatMask) {
   }
   if (NOT_IN_FORMAT(DIV_SAMPLE_DEPTH_BRR)) { // BRR
     if (!initInternal(DIV_SAMPLE_DEPTH_BRR,samples)) return;
-    brrEncode(data16,dataBRR,(samples+15)&(~15),loop?loopStart:-1);
+    brrEncode(data16,dataBRR,samples,loop?loopStart:-1,brrEmphasis);
   }
   if (NOT_IN_FORMAT(DIV_SAMPLE_DEPTH_VOX)) { // VOX
     if (!initInternal(DIV_SAMPLE_DEPTH_VOX,samples)) return;
@@ -987,9 +1178,9 @@ DivSampleHistory* DivSample::prepareUndo(bool data, bool doNotPush) {
       duplicate=new unsigned char[getCurBufLen()];
       memcpy(duplicate,getCurBuf(),getCurBufLen());
     }
-    h=new DivSampleHistory(duplicate,getCurBufLen(),samples,depth,rate,centerRate,loopStart,loopEnd,loop,loopMode);
+    h=new DivSampleHistory(duplicate,getCurBufLen(),samples,depth,rate,centerRate,loopStart,loopEnd,loop,brrEmphasis,loopMode);
   } else {
-    h=new DivSampleHistory(depth,rate,centerRate,loopStart,loopEnd,loop,loopMode);
+    h=new DivSampleHistory(depth,rate,centerRate,loopStart,loopEnd,loop,brrEmphasis,loopMode);
   }
   if (!doNotPush) {
     while (!redoHist.empty()) {

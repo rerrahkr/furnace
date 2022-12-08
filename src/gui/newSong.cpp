@@ -107,7 +107,7 @@ void FurnaceGUI::drawNewSong() {
           ImGui::TableNextRow();
           ImGui::TableNextColumn();
           if (ImGui::Selectable(i.name,false,ImGuiSelectableFlags_DontClosePopups)) {
-            nextDesc=i.definition.data();
+            nextDesc=i.definition;
             nextDescName=i.name;
             accepted=true;
           }
@@ -128,7 +128,9 @@ void FurnaceGUI::drawNewSong() {
       if (newSystemCat->systems.size()==0) {
         ImGui::CloseCurrentPopup();
       } else {
-        nextDesc=newSystemCat->systems[rand()%newSystemCat->systems.size()].definition.data();
+        unsigned int selection=rand()%newSystemCat->systems.size();
+        nextDesc=newSystemCat->systems[selection].definition;
+        nextDescName=newSystemCat->systems[selection].name;
         accepted=true;
       }
     }
@@ -141,16 +143,7 @@ void FurnaceGUI::drawNewSong() {
   }
 
   if (accepted) {
-    // TODO: remove after porting all presets to new format
-    String oldDescFormat;
-    for (const int* i=nextDesc; *i; i+=4) {
-      oldDescFormat+=fmt::sprintf("%d ",e->systemToFileFur((DivSystem)i[0]));
-      oldDescFormat+=fmt::sprintf("%d ",i[1]);
-      oldDescFormat+=fmt::sprintf("%d ",i[2]);
-      oldDescFormat+=fmt::sprintf("%d ",i[3]);
-    }
-    String oldDesc=e->decodeSysDesc(oldDescFormat.c_str());
-    e->createNew(oldDesc.c_str(),nextDescName);
+    e->createNew(nextDesc.c_str(),nextDescName,false);
     undoHist.clear();
     redoHist.clear();
     curFileName="";

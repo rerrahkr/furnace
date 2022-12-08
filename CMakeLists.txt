@@ -309,6 +309,7 @@ endif()
 
 set(ENGINE_SOURCES
 src/log.cpp
+src/baseutils.cpp
 src/fileutils.cpp
 src/utfutils.cpp
 
@@ -516,6 +517,7 @@ src/engine/platform/zxbeeper.cpp
 src/engine/platform/bubsyswsg.cpp
 src/engine/platform/n163.cpp
 src/engine/platform/pet.cpp
+src/engine/platform/pong.cpp
 src/engine/platform/vic20.cpp
 src/engine/platform/vrc6.cpp
 src/engine/platform/scc.cpp
@@ -579,6 +581,7 @@ src/gui/guiConst.cpp
 src/gui/about.cpp
 src/gui/channels.cpp
 src/gui/chanOsc.cpp
+src/gui/clock.cpp
 src/gui/compatFlags.cpp
 src/gui/cursor.cpp
 src/gui/dataList.cpp
@@ -602,6 +605,7 @@ src/gui/piano.cpp
 src/gui/presets.cpp
 src/gui/regView.cpp
 src/gui/sampleEdit.cpp
+src/gui/scaling.cpp
 src/gui/settings.cpp
 src/gui/songInfo.cpp
 src/gui/songNotes.cpp
@@ -704,11 +708,11 @@ if (WIN32)
   if (NOT MSVC)
     list(APPEND DEPENDENCIES_LIBRARIES -static)
   endif()
-endif()
-
-if (APPLE)
+elseif (APPLE)
   find_library(COCOA Cocoa REQUIRED)
   list(APPEND DEPENDENCIES_LIBRARIES ${COCOA})
+else()
+  list(APPEND DEPENDENCIES_LIBRARIES dl)
 endif()
 
 if (NOT MSVC)

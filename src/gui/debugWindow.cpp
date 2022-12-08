@@ -42,7 +42,7 @@ void FurnaceGUI::drawDebug() {
     nextWindow=GUI_WINDOW_NOTHING;
   }
   if (!debugOpen) return;
-  ImGui::SetNextWindowSizeConstraints(ImVec2(400.0f*dpiScale,200.0f*dpiScale),ImVec2(scrW*dpiScale,scrH*dpiScale));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(100.0f*dpiScale,100.0f*dpiScale),ImVec2(canvasW,canvasH));
   if (ImGui::Begin("Debug",&debugOpen,globalWinFlags|ImGuiWindowFlags_NoDocking)) {
     ImGui::Text("NOTE: use with caution.");
     if (ImGui::TreeNode("Debug Controls")) {
@@ -376,6 +376,41 @@ void FurnaceGUI::drawDebug() {
 
         ImGui::EndTable();
       }
+      ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("Window Debug")) {
+      ImGui::Text("Screen: %dx%d+%d+%d",scrW,scrH,scrX,scrY);
+      ImGui::Text("Screen (Conf): %dx%d+%d+%d",scrConfW,scrConfH,scrConfX,scrConfY);
+      ImGui::Text("Canvas: %dx%d",canvasW,canvasH);
+      ImGui::Text("Maximized: %d",scrMax);
+      ImGui::Text("System Managed Scale: %d",sysManagedScale);
+      ImGui::TreePop();
+    }
+    if (ImGui::TreeNode("Visualizer Debug")) {
+      if (ImGui::BeginTable("visX",3,ImGuiTableFlags_Borders)) {
+        ImGui::TableNextRow(ImGuiTableRowFlags_Headers);
+        ImGui::TableNextColumn();
+        ImGui::Text("channel");
+        ImGui::TableNextColumn();
+        ImGui::Text("patChanX");
+        ImGui::TableNextColumn();
+        ImGui::Text("patChanSlideY");
+
+        for (int i=0; i<e->getTotalChannelCount(); i++) {
+          ImGui::TableNextRow();
+          ImGui::TableNextColumn();
+          ImGui::Text("%d",i);
+          ImGui::TableNextColumn();
+          ImGui::Text("%f",patChanX[i]);
+          ImGui::TableNextColumn();
+          ImGui::Text("%f",patChanSlideY[i]);
+        }
+
+        ImGui::EndTable();
+      }
+      
+      ImGui::Text("particle count: %d",(int)particles.size());
+
       ImGui::TreePop();
     }
     if (ImGui::TreeNode("Playground")) {

@@ -80,7 +80,7 @@ void DivPlatformVIC20::calcAndWriteOutVol(int ch, int env) {
 }
 
 void DivPlatformVIC20::writeOutVol(int ch) {
-  if (!isMuted[ch]) {
+  if (!isMuted[ch] && chan[ch].active) {
     rWrite(14,chan[ch].outVol);
   }
 }
@@ -307,6 +307,7 @@ void DivPlatformVIC20::setFlags(const DivConfig& flags) {
   } else {
     chipClock=COLOR_NTSC*2.0/7.0;
   }
+  CHECK_CUSTOM_CLOCK;
   rate=chipClock/4;
   for (int i=0; i<4; i++) {
     oscBuf[i]->rate=rate;

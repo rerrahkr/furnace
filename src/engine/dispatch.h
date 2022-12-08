@@ -205,6 +205,10 @@ enum DivDispatchCmds {
   DIV_CMD_SNES_ECHO_FEEDBACK,
   DIV_CMD_SNES_ECHO_FIR,
 
+  DIV_CMD_NES_ENV_MODE,
+  DIV_CMD_NES_LENGTH,
+  DIV_CMD_NES_COUNT_MODE,
+
   DIV_ALWAYS_SET_VOLUME, // () -> alwaysSetVol
 
   DIV_CMD_MAX
@@ -259,6 +263,14 @@ struct DivRegWrite {
   unsigned short val;
   DivRegWrite(unsigned int a, unsigned short v):
     addr(a), val(v) {}
+};
+
+struct DivDelayedWrite {
+  int time;
+  DivRegWrite write;
+  DivDelayedWrite(int t, unsigned int a, unsigned short v):
+    time(t),
+    write(a,v) {}
 };
 
 struct DivDispatchOscBuffer {
@@ -322,6 +334,14 @@ class DivDispatch {
      * @param len the amount of samples to fill.
      */
     virtual void acquire(short* bufL, short* bufR, size_t start, size_t len);
+
+    /**
+     * fill a write stream with data (e.g. for software-mixed PCM).
+     * @param stream the write stream.
+     * @param rate stream rate (e.g. 44100 for VGM).
+     * @param len number of samples.
+     */
+    virtual void fillStream(std::vector<DivDelayedWrite>& stream, int sRate, size_t len);
 
     /**
      * send a command to this dispatch.
@@ -510,23 +530,46 @@ class DivDispatch {
 
     /**
      * Get sample memory buffer.
+     * @param index the memory index.
+     * @return a pointer to sample memory, or NULL.
      */
     virtual const void* getSampleMem(int index = 0);
 
     /**
      * Get sample memory capacity.
+     * @param index the memory index.
+     * @return memory capacity in bytes, or 0 if memory doesn't exist.
      */
     virtual size_t getSampleMemCapacity(int index = 0);
 
     /**
+     * get sample memory name.
+     * @param index the memory index.
+     * @return a name, or NULL if it doesn't have any name in particular.
+     */
+    virtual const char* getSampleMemName(int index=0);
+
+    /**
      * Get sample memory usage.
+     * @param index the memory index.
+     * @return memory usage in bytes.
      */
     virtual size_t getSampleMemUsage(int index = 0);
 
     /**
-     * Render samples into sample memory.
+     * check whether sample has been loaded in memory.
+     * @param memory index.
+     * @param sample the sample in question.
+     * @return whether it did.
      */
-    virtual void renderSamples();
+    virtual bool isSampleLoaded(int index, int sample);
+    
+
+    /**
+     * Render samples into sample memory.
+     * @param sysID the chip's index in the chip list.
+     */
+    virtual void renderSamples(int sysID);
 
     /**
      * initialize this DivDispatch.
@@ -546,6 +589,14 @@ class DivDispatch {
     virtual ~DivDispatch();
 };
 
+// custom chip clock helper define. put in setFlags, but before rate is set.
+#define CHECK_CUSTOM_CLOCK \
+  if (flags.getInt("customClock",0)>0) { \
+    chipClock=flags.getInt("customClock",1000000); \
+    if (chipClock>20000000) chipClock=20000000; \
+    if (chipClock<100000) chipClock=100000; \
+  }
+
 // pitch calculation:
 // - a DivDispatch usually contains four variables per channel:
 //   - baseFreq: this changes on new notes, legato, arpeggio and slides.
@@ -562,9 +613,10 @@ class DivDispatch {
 #define NOTE_FNUM_BLOCK(x,bits) parent->calcBaseFreqFNumBlock(chipClock,CHIP_FREQBASE,x,bits)
 
 // this is for volume scaling calculation.
-#define VOL_SCALE_LINEAR_BROKEN(x,y,range) ((parent->song.newVolumeScaling)?(((x)*(y))/(range)):(CLAMP(((x)+(y))-(range),0,(range))))
 #define VOL_SCALE_LINEAR(x,y,range) (((x)*(y))/(range))
-#define VOL_SCALE_LOG(x,y,range) ((parent->song.newVolumeScaling)?(CLAMP(((x)+(y))-(range),0,(range))):(((x)*(y))/(range)))
+#define VOL_SCALE_LOG(x,y,range) (CLAMP(((x)+(y))-(range),0,(range)))
+#define VOL_SCALE_LINEAR_BROKEN(x,y,range) ((parent->song.newVolumeScaling)?(VOL_SCALE_LINEAR(x,y,range)):(VOL_SCALE_LOG(x,y,range)))
+#define VOL_SCALE_LOG_BROKEN(x,y,range) ((parent->song.newVolumeScaling)?(VOL_SCALE_LOG(x,y,range)):(VOL_SCALE_LINEAR(x,y,range)))
 
 // these are here for convenience.
 // it is encouraged to use these, since you get an exact value this way.

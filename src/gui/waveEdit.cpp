@@ -162,6 +162,7 @@ void FurnaceGUI::doGenerateWave() {
   }
 
   e->notifyWaveChange(curWave);
+  MARK_MODIFIED;
 }
 
 #define CENTER_TEXT(text) \
@@ -176,12 +177,12 @@ void FurnaceGUI::drawWaveEdit() {
   if (!waveEditOpen) return;
   float wavePreview[257];
   if (mobileUI) {
-    patWindowPos=(portrait?ImVec2(0.0f,(mobileMenuPos*-0.65*scrH*dpiScale)):ImVec2((0.16*scrH*dpiScale)+0.5*scrW*dpiScale*mobileMenuPos,0.0f));
-    patWindowSize=(portrait?ImVec2(scrW*dpiScale,scrH*dpiScale-(0.16*scrW*dpiScale)-(pianoOpen?(0.4*scrW*dpiScale):0.0f)):ImVec2(scrW*dpiScale-(0.16*scrH*dpiScale),scrH*dpiScale-(pianoOpen?(0.3*scrH*dpiScale):0.0f)));
+    patWindowPos=(portrait?ImVec2(0.0f,(mobileMenuPos*-0.65*canvasH)):ImVec2((0.16*canvasH)+0.5*canvasW*mobileMenuPos,0.0f));
+    patWindowSize=(portrait?ImVec2(canvasW,canvasH-(0.16*canvasW)-(pianoOpen?(0.4*canvasW):0.0f)):ImVec2(canvasW-(0.16*canvasH),canvasH-(pianoOpen?(0.3*canvasH):0.0f)));
     ImGui::SetNextWindowPos(patWindowPos);
     ImGui::SetNextWindowSize(patWindowSize);
   } else {
-    ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f*dpiScale,300.0f*dpiScale),ImVec2(scrW*dpiScale,scrH*dpiScale));
+    ImGui::SetNextWindowSizeConstraints(ImVec2(300.0f*dpiScale,300.0f*dpiScale),ImVec2(canvasW,canvasH));
   }
   if (ImGui::Begin("Wavetable Editor",&waveEditOpen,globalWinFlags|(settings.allowEditDocking?0:ImGuiWindowFlags_NoDocking))) {
     if (curWave<0 || curWave>=(int)e->song.wave.size()) {
@@ -199,7 +200,10 @@ void FurnaceGUI::drawWaveEdit() {
 
         if (e->song.wave.size()>0) {
           if (ImGui::BeginCombo("##WaveSelect","select one...")) {
-            actualWaveList();
+            if (ImGui::BeginTable("WaveSelCombo",1,ImGuiTableFlags_ScrollY)) {
+              actualWaveList();
+              ImGui::EndTable();
+            }
             ImGui::EndCombo();
           }
           ImGui::SameLine();
@@ -639,11 +643,11 @@ void FurnaceGUI::drawWaveEdit() {
                 }
                 ImGui::TableNextColumn();
                 if (ImGui::Button("Scale Y")) {
-                  if (waveGenScaleY>0 && wave->max!=waveGenScaleY) e->lockEngine([this,wave]() {
+                  if (waveGenScaleY>0 && wave->max!=(waveGenScaleY-1)) e->lockEngine([this,wave]() {
                     for (int i=0; i<wave->len; i++) {
                       wave->data[i]=(wave->data[i]*(waveGenScaleY+1))/(wave->max+1);
                     }
-                    wave->max=waveGenScaleY;
+                    wave->max=waveGenScaleY-1;
                     MARK_MODIFIED;
                   });
                 }
@@ -818,7 +822,7 @@ void FurnaceGUI::drawWaveEdit() {
               if (ImGui::Button("Randomize",buttonSize)) {
                 if (wave->max>0) e->lockEngine([this,wave]() {
                   for (int i=0; i<wave->len; i++) {
-                    wave->data[i]=rand()%wave->max;
+                    wave->data[i]=rand()%(wave->max+1);
                   }
                   MARK_MODIFIED;
                 });
@@ -850,6 +854,7 @@ void FurnaceGUI::drawWaveEdit() {
       if (ImGui::InputText("##MMLWave",&mmlStringW)) {
         int actualData[256];
         decodeMMLStrW(mmlStringW,actualData,wave->len,(waveSigned && !waveHex)?(-((wave->max+1)/2)):0,(waveSigned && !waveHex)?(wave->max/2):wave->max,waveHex);
+        MARK_MODIFIED;
         if (waveSigned && !waveHex) {
           for (int i=0; i<wave->len; i++) {
             actualData[i]+=(wave->max+1)/2;

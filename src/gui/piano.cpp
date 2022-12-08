@@ -54,7 +54,7 @@ void FurnaceGUI::drawPiano() {
   if (!pianoOpen) return;
   if (mobileUI) {
     ImGui::SetNextWindowPos(ImVec2(patWindowPos.x,patWindowPos.y+patWindowSize.y));
-    ImGui::SetNextWindowSize(portrait?ImVec2(scrW*dpiScale,0.4*scrW*dpiScale):ImVec2(scrW*dpiScale-(0.16*scrH*dpiScale),0.3*scrH*dpiScale));
+    ImGui::SetNextWindowSize(portrait?ImVec2(canvasW,0.4*canvasW):ImVec2(canvasW-(0.16*canvasH),0.3*canvasH));
   }
   if (ImGui::Begin("Piano",&pianoOpen,((pianoOptions)?0:ImGuiWindowFlags_NoTitleBar)|ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse|globalWinFlags)) {
     bool oldPianoKeyPressed[180];
@@ -158,7 +158,7 @@ void FurnaceGUI::drawPiano() {
       }
 
       ImGui::TableNextColumn();
-      if (pianoInputPadMode==1 && cursor.xFine>0) {
+      if (pianoInputPadMode==1 && cursor.xFine>0 && curWindow==GUI_WINDOW_PATTERN) {
         ImVec2 buttonSize=ImGui::GetContentRegionAvail();
         if (ImGui::BeginTable("InputPadP",8,ImGuiTableFlags_SizingFixedSame)) {
           ImGui::TableNextRow();
@@ -219,11 +219,15 @@ void FurnaceGUI::drawPiano() {
         // render piano
         //ImGui::ItemSize(size,ImGui::GetStyle().FramePadding.y);
         if (ImGui::ItemAdd(rect,ImGui::GetID("pianoDisplay"))) {
-          ImGui::ItemHoverable(rect,ImGui::GetID("pianoDisplay"));
+          bool canInput=false;
+          if (ImGui::ItemHoverable(rect,ImGui::GetID("pianoDisplay"))) {
+            canInput=true;
+            ImGui::InhibitInertialScroll();
+          }
           if (view) {
             int notes=oct*12;
             // evaluate input
-            for (TouchPoint& i: activePoints) {
+            if (canInput) for (TouchPoint& i: activePoints) {
               if (rect.Contains(ImVec2(i.x,i.y))) {
                 int note=(((i.x-rect.Min.x)/(rect.Max.x-rect.Min.x))*notes)+12*off;
                 if (note<0) continue;
@@ -263,7 +267,7 @@ void FurnaceGUI::drawPiano() {
           } else {
             int bottomNotes=7*oct;
             // evaluate input
-            for (TouchPoint& i: activePoints) {
+            if (canInput) for (TouchPoint& i: activePoints) {
               if (rect.Contains(ImVec2(i.x,i.y))) {
                 // top
                 int o=((i.x-rect.Min.x)/(rect.Max.x-rect.Min.x))*oct;
@@ -369,14 +373,27 @@ void FurnaceGUI::drawPiano() {
           pianoOptions=!pianoOptions;
         }
 
+        // TODO: wave and sample preview
         // first check released keys
         for (int i=0; i<180; i++) {
           int note=i-60;
           if (!pianoKeyPressed[i]) {
             if (pianoKeyPressed[i]!=oldPianoKeyPressed[i]) {
-              e->synchronized([this,note]() {
-                e->autoNoteOff(-1,note);
-              });
+              switch (curWindow) {
+                case GUI_WINDOW_WAVE_LIST:
+                case GUI_WINDOW_WAVE_EDIT:
+                  e->stopWavePreview();
+                  break;
+                case GUI_WINDOW_SAMPLE_LIST:
+                case GUI_WINDOW_SAMPLE_EDIT:
+                  e->stopSamplePreview();
+                  break;
+                default:
+                  e->synchronized([this,note]() {
+                    e->autoNoteOff(-1,note);
+                  });
+                  break;
+              }
             }
           }
         }
@@ -385,10 +402,22 @@ void FurnaceGUI::drawPiano() {
           int note=i-60;
           if (pianoKeyPressed[i]) {
             if (pianoKeyPressed[i]!=oldPianoKeyPressed[i]) {
-              e->synchronized([this,note]() {
-                e->autoNoteOn(-1,curIns,note);
-              });
-              if (edit) noteInput(note,0);
+              switch (curWindow) {
+                case GUI_WINDOW_WAVE_LIST:
+                case GUI_WINDOW_WAVE_EDIT:
+                  e->previewWave(curWave,note);
+                  break;
+                case GUI_WINDOW_SAMPLE_LIST:
+                case GUI_WINDOW_SAMPLE_EDIT:
+                  e->previewSample(curSample,note);
+                  break;
+                default:
+                  e->synchronized([this,note]() {
+                    e->autoNoteOn(-1,curIns,note);
+                  });
+                  if (edit && curWindow!=GUI_WINDOW_INS_LIST && curWindow!=GUI_WINDOW_INS_EDIT) noteInput(note,0);
+                  break;
+              }
             }
           }
         }
@@ -397,11 +426,12 @@ void FurnaceGUI::drawPiano() {
       ImGui::EndTable();
     }
   }
-  if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) curWindow=GUI_WINDOW_PIANO;
+  // don't worry about it
+  //if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) curWindow=GUI_WINDOW_PIANO;
   ImGui::End();
 
   // draw input pad if necessary
-  if ((pianoInputPadMode==2 && cursor.xFine>0) || pianoInputPadMode==3) {
+  if (curWindow==GUI_WINDOW_PATTERN && ((pianoInputPadMode==2 && cursor.xFine>0) || pianoInputPadMode==3)) {
     if (ImGui::Begin("Input Pad",NULL,ImGuiWindowFlags_NoTitleBar)) {
       ImGui::BeginDisabled(cursor.xFine==0);
       if (ImGui::BeginTable("InputPad",3,ImGuiTableFlags_Borders)) {
@@ -458,7 +488,8 @@ void FurnaceGUI::drawPiano() {
       }
       ImGui::EndDisabled();
     }
-    if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) curWindow=GUI_WINDOW_PIANO;
+    // don't worry about it either
+    //if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) curWindow=GUI_WINDOW_PIANO;
     ImGui::End();
   }
 }

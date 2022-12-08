@@ -77,7 +77,12 @@ void FurnaceGUI::calcChanOsc() {
   int chans=e->getTotalChannelCount();
   
   for (int i=0; i<chans; i++) {
+    int tryAgain=i;
     DivDispatchOscBuffer* buf=e->getOscBuffer(i);
+    while (buf==NULL) {
+      if (--tryAgain<0) break;
+      buf=e->getOscBuffer(tryAgain);
+    }
     if (buf!=NULL && e->curSubSong->chanShow[i]) {
       // 30ms should be enough
       int displaySize=(float)(buf->rate)*0.03f;
@@ -109,7 +114,7 @@ void FurnaceGUI::drawChanOsc() {
     nextWindow=GUI_WINDOW_NOTHING;
   }
   if (!chanOscOpen) return;
-  ImGui::SetNextWindowSizeConstraints(ImVec2(64.0f*dpiScale,32.0f*dpiScale),ImVec2(scrW*dpiScale,scrH*dpiScale));
+  ImGui::SetNextWindowSizeConstraints(ImVec2(64.0f*dpiScale,32.0f*dpiScale),ImVec2(canvasW,canvasH));
   if (ImGui::Begin("Oscilloscope (per-channel)",&chanOscOpen,globalWinFlags|((chanOscOptions)?0:ImGuiWindowFlags_NoTitleBar))) {
     bool centerSettingReset=false;
     ImDrawList* dl=ImGui::GetWindowDrawList();

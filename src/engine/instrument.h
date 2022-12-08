@@ -22,6 +22,9 @@
 #include "safeWriter.h"
 #include "dataErrors.h"
 #include "../ta-utils.h"
+#include <vector>
+
+struct DivSong;
 
 // NOTICE!
 // before adding new instrument types to this struct, please ask me first.
@@ -95,11 +98,21 @@ struct DivInstrumentFM {
   unsigned char alg, fb, fms, ams, fms2, ams2, ops, opllPreset;
   bool fixedDrums;
   unsigned short kickFreq, snareHatFreq, tomTopFreq;
+
+  bool operator==(const DivInstrumentFM& other);
+  bool operator!=(const DivInstrumentFM& other) {
+    return !(*this==other);
+  }
   struct Operator {
     bool enable;
     unsigned char am, ar, dr, mult, rr, sl, tl, dt2, rs, dt, d2r, ssgEnv;
     unsigned char dam, dvb, egt, ksl, sus, vib, ws, ksr; // YMU759/OPL/OPZ
     unsigned char kvs;
+
+    bool operator==(const Operator& other);
+    bool operator!=(const Operator& other) {
+      return !(*this==other);
+    }
     Operator():
       enable(true),
       am(0),
@@ -294,6 +307,12 @@ struct DivInstrumentGB {
     unsigned char cmd;
     unsigned short data;
   } hwSeq[256];
+
+  bool operator==(const DivInstrumentGB& other);
+  bool operator!=(const DivInstrumentGB& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentGB():
     envVol(15),
     envDir(0),
@@ -315,6 +334,11 @@ struct DivInstrumentC64 {
   unsigned char res;
   unsigned short cut;
   bool hp, lp, bp, ch3off;
+
+  bool operator==(const DivInstrumentC64& other);
+  bool operator!=(const DivInstrumentC64& other) {
+    return !(*this==other);
+  }
 
   DivInstrumentC64():
     triOn(false),
@@ -357,6 +381,11 @@ struct DivInstrumentAmiga {
   unsigned char waveLen;
   SampleMap noteMap[120];
 
+  bool operator==(const DivInstrumentAmiga& other);
+  bool operator!=(const DivInstrumentAmiga& other) {
+    return !(*this==other);
+  }
+
   /**
    * get the sample at specified note.
    * @return the sample.
@@ -398,6 +427,11 @@ struct DivInstrumentAmiga {
 struct DivInstrumentX1_010 {
   int bankSlot;
 
+  bool operator==(const DivInstrumentX1_010& other);
+  bool operator!=(const DivInstrumentX1_010& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentX1_010():
     bankSlot(0) {}
 };
@@ -405,6 +439,11 @@ struct DivInstrumentX1_010 {
 struct DivInstrumentN163 {
   int wave, wavePos, waveLen;
   unsigned char waveMode;
+
+  bool operator==(const DivInstrumentN163& other);
+  bool operator!=(const DivInstrumentN163& other) {
+    return !(*this==other);
+  }
 
   DivInstrumentN163():
     wave(-1),
@@ -418,6 +457,12 @@ struct DivInstrumentFDS {
   int modSpeed, modDepth;
   // this is here for compatibility.
   bool initModTableWithFirstWave;
+
+  bool operator==(const DivInstrumentFDS& other);
+  bool operator!=(const DivInstrumentFDS& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentFDS():
     modSpeed(0),
     modDepth(0),
@@ -429,6 +474,11 @@ struct DivInstrumentFDS {
 struct DivInstrumentMultiPCM {
   unsigned char ar, d1r, dl, d2r, rr, rc;
   unsigned char lfo, vib, am;
+
+  bool operator==(const DivInstrumentMultiPCM& other);
+  bool operator!=(const DivInstrumentMultiPCM& other) {
+    return !(*this==other);
+  }
 
   DivInstrumentMultiPCM():
     ar(15), d1r(15), dl(0), d2r(0), rr(15), rc(15),
@@ -468,6 +518,12 @@ struct DivInstrumentWaveSynth {
   unsigned char effect;
   bool oneShot, enabled, global;
   unsigned char speed, param1, param2, param3, param4;
+
+  bool operator==(const DivInstrumentWaveSynth& other);
+  bool operator!=(const DivInstrumentWaveSynth& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentWaveSynth():
     wave1(0),
     wave2(0),
@@ -485,6 +541,12 @@ struct DivInstrumentWaveSynth {
 
 struct DivInstrumentSoundUnit {
   bool switchRoles;
+
+  bool operator==(const DivInstrumentSoundUnit& other);
+  bool operator!=(const DivInstrumentSoundUnit& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentSoundUnit():
     switchRoles(false) {}
 };
@@ -520,6 +582,12 @@ struct DivInstrumentES5506 {
   };
   Filter filter;
   Envelope envelope;
+
+  bool operator==(const DivInstrumentES5506& other);
+  bool operator!=(const DivInstrumentES5506& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentES5506():
     filter(Filter()),
     envelope(Envelope()) {}
@@ -537,6 +605,12 @@ struct DivInstrumentSNES {
   GainMode gainMode;
   unsigned char gain;
   unsigned char a, d, s, r;
+
+  bool operator==(const DivInstrumentSNES& other);
+  bool operator!=(const DivInstrumentSNES& other) {
+    return !(*this==other);
+  }
+
   DivInstrumentSNES():
     useEnv(true),
     sus(false),
@@ -550,7 +624,6 @@ struct DivInstrumentSNES {
 
 struct DivInstrument {
   String name;
-  bool mode;
   DivInstrumentType type;
   DivInstrumentFM fm;
   DivInstrumentSTD std;
@@ -565,6 +638,51 @@ struct DivInstrument {
   DivInstrumentSoundUnit su;
   DivInstrumentES5506 es5506;
   DivInstrumentSNES snes;
+
+  /**
+   * these are internal functions.
+   */
+  void writeMacro(SafeWriter* w, const DivInstrumentMacro& m, unsigned char macroCode);
+  void writeFeatureNA(SafeWriter* w);
+  void writeFeatureFM(SafeWriter* w, bool fui);
+  void writeFeatureMA(SafeWriter* w);
+  void writeFeature64(SafeWriter* w);
+  void writeFeatureGB(SafeWriter* w);
+  void writeFeatureSM(SafeWriter* w);
+  void writeFeatureOx(SafeWriter* w, int op);
+  void writeFeatureLD(SafeWriter* w);
+  void writeFeatureSN(SafeWriter* w);
+  void writeFeatureN1(SafeWriter* w);
+  void writeFeatureFD(SafeWriter* w);
+  void writeFeatureWS(SafeWriter* w);
+  size_t writeFeatureSL(SafeWriter* w, std::vector<int>& list, const DivSong* song);
+  size_t writeFeatureWL(SafeWriter* w, std::vector<int>& list, const DivSong* song);
+  void writeFeatureMP(SafeWriter* w);
+  void writeFeatureSU(SafeWriter* w);
+  void writeFeatureES(SafeWriter* w);
+  void writeFeatureX1(SafeWriter* w);
+
+  void readFeatureNA(SafeReader& reader);
+  void readFeatureFM(SafeReader& reader);
+  void readFeatureMA(SafeReader& reader);
+  void readFeature64(SafeReader& reader);
+  void readFeatureGB(SafeReader& reader);
+  void readFeatureSM(SafeReader& reader);
+  void readFeatureOx(SafeReader& reader, int op);
+  void readFeatureLD(SafeReader& reader);
+  void readFeatureSN(SafeReader& reader);
+  void readFeatureN1(SafeReader& reader);
+  void readFeatureFD(SafeReader& reader);
+  void readFeatureWS(SafeReader& reader);
+  void readFeatureSL(SafeReader& reader, DivSong* song, short version);
+  void readFeatureWL(SafeReader& reader, DivSong* song, short version);
+  void readFeatureMP(SafeReader& reader);
+  void readFeatureSU(SafeReader& reader);
+  void readFeatureES(SafeReader& reader);
+  void readFeatureX1(SafeReader& reader);
+
+  DivDataErrors readInsDataOld(SafeReader& reader, short version);
+  DivDataErrors readInsDataNew(SafeReader& reader, short version, bool fui, DivSong* song);
   
   /**
    * save the instrument to a SafeWriter.
@@ -573,19 +691,27 @@ struct DivInstrument {
   void putInsData(SafeWriter* w);
 
   /**
+   * save the instrument to a SafeWriter using new format.
+   * @param w the SafeWriter in question.
+   */
+  void putInsData2(SafeWriter* w, bool fui=false, const DivSong* song=NULL);
+
+  /**
    * read instrument data in .fui format.
    * @param reader the reader.
    * @param version the format version.
    * @return a DivDataErrors.
    */
-  DivDataErrors readInsData(SafeReader& reader, short version);
+  DivDataErrors readInsData(SafeReader& reader, short version, DivSong* song=NULL);
 
   /**
    * save this instrument to a file.
    * @param path file path.
+   * @param oldFormat whether to save in legacy Furnace ins format.
+   * @param song if new format, a DivSong to read wavetables and samples.
    * @return whether it was successful.
    */
-  bool save(const char* path);
+  bool save(const char* path, bool oldFormat=false, DivSong* song=NULL);
 
   /**
    * save this instrument to a file in .dmp format.

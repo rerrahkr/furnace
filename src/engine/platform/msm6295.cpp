@@ -92,7 +92,7 @@ void DivPlatformMSM6295::tick(bool sysTick) {
     if (!parent->song.disableSampleMacro) {
       chan[i].std.next();
       if (chan[i].std.vol.had) {
-        chan[i].outVol=VOL_SCALE_LOG(chan[i].std.vol.val,chan[i].vol,8);
+        chan[i].outVol=VOL_SCALE_LOG_BROKEN(chan[i].std.vol.val,chan[i].vol,8);
       }
       if (chan[i].std.duty.had) {
         if (rateSel!=(chan[i].std.duty.val&1)) {
@@ -335,11 +335,18 @@ size_t DivPlatformMSM6295::getSampleMemUsage(int index) {
   return index == 0 ? adpcmMemLen : 0;
 }
 
-void DivPlatformMSM6295::renderSamples() {
+bool DivPlatformMSM6295::isSampleLoaded(int index, int sample) {
+  if (index!=0) return false;
+  if (sample<0 || sample>255) return false;
+  return sampleLoaded[sample];
+}
+
+void DivPlatformMSM6295::renderSamples(int sysID) {
   unsigned int sampleOffVOX[256];
 
   memset(adpcmMem,0,getSampleMemCapacity(0));
   memset(sampleOffVOX,0,256*sizeof(unsigned int));
+  memset(sampleLoaded,0,256*sizeof(bool));
 
   // sample data
   size_t memPos=128*8;
@@ -347,6 +354,11 @@ void DivPlatformMSM6295::renderSamples() {
   if (sampleCount>128) sampleCount=128;
   for (int i=0; i<sampleCount; i++) {
     DivSample* s=parent->song.sample[i];
+    if (!s->renderOn[0][sysID]) {
+      sampleOffVOX[i]=0;
+      continue;
+    }
+
     int paddedLen=s->lengthVOX;
     if (memPos>=getSampleMemCapacity(0)) {
       logW("out of ADPCM memory for sample %d!",i);
@@ -357,6 +369,7 @@ void DivPlatformMSM6295::renderSamples() {
       logW("out of ADPCM memory for sample %d!",i);
     } else {
       memcpy(adpcmMem+memPos,s->dataVOX,paddedLen);
+      sampleLoaded[i]=true;
     }
     sampleOffVOX[i]=memPos;
     memPos+=paddedLen;
@@ -425,6 +438,7 @@ void DivPlatformMSM6295::setFlags(const DivConfig& flags) {
       chipClock=4000000/4;
       break;
   }
+  CHECK_CUSTOM_CLOCK;
   rate=chipClock/3;
   for (int i=0; i<4; i++) {
     oscBuf[i]->rate=rate/22;

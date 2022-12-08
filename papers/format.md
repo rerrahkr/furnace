@@ -32,6 +32,14 @@ these fields are 0 in format versions prior to 100 (0.6pre1).
 
 the format versions are:
 
+- 129: Furnace dev129
+- 128: Furnace dev128
+- 127: Furnace dev127
+- 126: Furnace dev126
+- 125: Furnace dev125
+- 124: Furnace dev124
+- 123: Furnace dev123
+- 122: Furnace dev122
 - 121: Furnace dev121
 - 120: Furnace dev120
 - 119: Furnace dev119
@@ -265,6 +273,7 @@ size | description
      |   - 0xc5: YM2610B CSM - 20 channels
      |   - 0xde: YM2610B extended - 19 channels
      |   - 0xe0: QSound - 19 channels
+     |   - 0xfc: Pong - 1 channel
      |   - 0xfd: Dummy System - 8 channels
      |   - 0xfe: reserved for development
      |   - 0xff: reserved for development
@@ -434,7 +443,23 @@ clock=4000000
 stereo=true
 ```
 
-# instrument
+# instrument (>=127)
+
+Furnace dev127 and higher use the new instrument format.
+
+```
+size | description
+-----|------------------------------------
+  4  | "INS2" block ID
+  4  | size of this block
+  2  | format version
+  2  | instrument type
+ ??? | features...
+```
+
+see [newIns.md](newIns.md) for more information.
+
+# old instrument (<127)
 
 notes:
 
@@ -1095,7 +1120,13 @@ size | description
      | - 9: BRR (SNES)
      | - 10: VOX
      | - 16: 16-bit PCM
-  3  | reserved
+  1  | loop direction (>=123) or reserved
+     | - 0: forward
+     | - 1: backward
+     | - 2: ping-pong
+  1  | flags (>=129) or reserved
+     | - 0: BRR emphasis
+  1  | reserved
   4  | loop start
      | - -1 means no loop
   4  | loop end

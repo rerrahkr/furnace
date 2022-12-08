@@ -316,7 +316,7 @@ void DivPlatformOPL::tick(bool sysTick) {
     chan[i].std.next();
 
     if (chan[i].std.vol.had) {
-      chan[i].outVol=VOL_SCALE_LOG(chan[i].vol,MIN(63,chan[i].std.vol.val),63);
+      chan[i].outVol=VOL_SCALE_LOG_BROKEN(chan[i].vol,MIN(63,chan[i].std.vol.val),63);
       for (int j=0; j<ops; j++) {
         unsigned char slot=slots[j][i];
         if (slot==255) continue;
@@ -327,7 +327,7 @@ void DivPlatformOPL::tick(bool sysTick) {
           rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
         } else {
           if (KVSL(i,j) || i>melodicChans) {
-            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
+            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
           } else {
             rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
           }
@@ -445,7 +445,7 @@ void DivPlatformOPL::tick(bool sysTick) {
           rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
         } else {
           if (KVSL(i,j) || i>melodicChans) {
-            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
+            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
           } else {
             rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
           }
@@ -673,7 +673,7 @@ void DivPlatformOPL::muteChannel(int ch, bool mute) {
       rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
     } else {
       if (KVSL(ch,i) || ch>melodicChans) {
-        rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[ch].outVol&0x3f,63))|(op.ksl<<6));
+        rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[ch].outVol&0x3f,63))|(op.ksl<<6));
       } else {
         rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
       }
@@ -809,7 +809,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
             if (isMuted[ch]) {
               rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
             } else {
-              rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[ch].outVol&0x3f,63))|(op.ksl<<6));
+              rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[ch].outVol&0x3f,63))|(op.ksl<<6));
             }
 
             rWrite(baseAddr+ADDR_AM_VIB_SUS_KSR_MULT,(op.am<<7)|(op.vib<<6)|(op.sus<<5)|(op.ksr<<4)|op.mult);
@@ -851,7 +851,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
               rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
             } else {
               if (KVSL(c.chan,i) || c.chan>melodicChans) {
-                rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
+                rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
               } else {
                 rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
               }
@@ -959,7 +959,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
           rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
         } else {
           if (KVSL(c.chan,i) || c.chan>melodicChans) {
-            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
+            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
           } else {
             rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
           }
@@ -1108,7 +1108,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
         rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
       } else {
         if (KVSL(c.chan,c.value) || c.chan>melodicChans) {
-          rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
+          rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
         } else {
           rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
         }
@@ -1338,7 +1338,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
             rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
           } else {
             if (KVSL(c.chan,i) || c.chan>melodicChans) {
-              rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
+              rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
             } else {
               rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
             }
@@ -1355,7 +1355,7 @@ int DivPlatformOPL::dispatch(DivCommand c) {
           rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
         } else {
           if (KVSL(c.chan,c.value) || c.chan>melodicChans) {
-            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
+            rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[c.chan].outVol&0x3f,63))|(op.ksl<<6));
           } else {
             rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
           }
@@ -1432,7 +1432,7 @@ void DivPlatformOPL::forceIns() {
         rWrite(baseAddr+ADDR_KSL_TL,63|(op.ksl<<6));
       } else {
         if (KVSL(i,j) || i>melodicChans) {
-          rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
+          rWrite(baseAddr+ADDR_KSL_TL,(63-VOL_SCALE_LOG_BROKEN(63-op.tl,chan[i].outVol&0x3f,63))|(op.ksl<<6));
         } else {
           rWrite(baseAddr+ADDR_KSL_TL,op.tl|(op.ksl<<6));
         }
@@ -1725,6 +1725,7 @@ void DivPlatformOPL::setFlags(const DivConfig& flags) {
           chipClock=COLOR_NTSC;
           break;
       }
+      CHECK_CUSTOM_CLOCK;
       rate=chipClock/72;
       chipRateBase=rate;
       break;
@@ -1746,6 +1747,7 @@ void DivPlatformOPL::setFlags(const DivConfig& flags) {
           chipClock=COLOR_NTSC*4.0;
           break;
       }
+      CHECK_CUSTOM_CLOCK;
       rate=chipClock/288;
       chipRateBase=rate;
       break;
@@ -1761,6 +1763,7 @@ void DivPlatformOPL::setFlags(const DivConfig& flags) {
           chipClock=COLOR_NTSC*8.0;
           break;
       }
+      CHECK_CUSTOM_CLOCK;
       rate=chipClock/768;
       chipRateBase=chipClock/684;
       break;
@@ -1788,14 +1791,26 @@ size_t DivPlatformOPL::getSampleMemUsage(int index) {
   return (index==0 && adpcmChan>=0) ? adpcmBMemLen : 0;
 }
 
-void DivPlatformOPL::renderSamples() {
+bool DivPlatformOPL::isSampleLoaded(int index, int sample) {
+  if (index!=0) return false;
+  if (sample<0 || sample>255) return false;
+  return sampleLoaded[sample];
+}
+
+void DivPlatformOPL::renderSamples(int sysID) {
   if (adpcmChan<0) return;
   memset(adpcmBMem,0,getSampleMemCapacity(0));
   memset(sampleOffB,0,256*sizeof(unsigned int));
+  memset(sampleLoaded,0,256*sizeof(bool));
 
   size_t memPos=0;
   for (int i=0; i<parent->song.sampleLen; i++) {
     DivSample* s=parent->song.sample[i];
+    if (!s->renderOn[0][sysID]) {
+      sampleOffB[i]=0;
+      continue;
+    }
+
     int paddedLen=(s->lengthB+255)&(~0xff);
     if ((memPos&0xf00000)!=((memPos+paddedLen)&0xf00000)) {
       memPos=(memPos+0xfffff)&0xf00000;
@@ -1809,6 +1824,7 @@ void DivPlatformOPL::renderSamples() {
       logW("out of ADPCM memory for sample %d!",i);
     } else {
       memcpy(adpcmBMem+memPos,s->dataB,paddedLen);
+      sampleLoaded[i]=true;
     }
     sampleOffB[i]=memPos;
     memPos+=paddedLen;

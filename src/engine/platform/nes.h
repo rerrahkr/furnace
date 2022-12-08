@@ -28,7 +28,7 @@
 class DivPlatformNES: public DivDispatch {
   struct Channel {
     int freq, baseFreq, pitch, pitch2, prevFreq, note, ins;
-    unsigned char duty, sweep;
+    unsigned char duty, sweep, envMode, len;
     bool active, insChanged, freqChanged, sweepChanged, keyOn, keyOff, inPorta, furnaceDac;
     signed char vol, outVol, wave;
     DivMacroInt std;
@@ -46,6 +46,8 @@ class DivPlatformNES: public DivDispatch {
       ins(-1),
       duty(0),
       sweep(8),
+      envMode(3),
+      len(0x1f),
       active(false),
       insChanged(true),
       freqChanged(false),
@@ -66,6 +68,7 @@ class DivPlatformNES: public DivDispatch {
   int dacSample;
   unsigned char* dpcmMem;
   size_t dpcmMemLen;
+  bool sampleLoaded[256];
   unsigned char dpcmBank;
   unsigned char sampleBank;
   unsigned char writeOscBuf;
@@ -74,6 +77,7 @@ class DivPlatformNES: public DivDispatch {
   bool dacAntiClickOn;
   bool useNP;
   bool goingToLoop;
+  bool countMode;
   struct NESAPU* nes;
   xgm::NES_APU* nes1_NP;
   xgm::NES_DMC* nes2_NP;
@@ -112,7 +116,8 @@ class DivPlatformNES: public DivDispatch {
     const void* getSampleMem(int index);
     size_t getSampleMemCapacity(int index);
     size_t getSampleMemUsage(int index);
-    void renderSamples();
+    bool isSampleLoaded(int index, int sample);
+    void renderSamples(int chipID);
     int init(DivEngine* parent, int channels, int sugRate, const DivConfig& flags);
     void quit();
     ~DivPlatformNES();
